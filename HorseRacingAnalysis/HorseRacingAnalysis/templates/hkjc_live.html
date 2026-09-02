@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌐 馬會官方最新賽事排位表</title>
+    <!-- 引入美化網頁的 CSS 框架 -->
+    <link href="https://jsdelivr.net" rel="stylesheet">
+    <style>
+        .race-btn {
+            width: 85px;
+            font-weight: bold;
+            font-size: 1.05rem;
+        }
+
+        .table-racing th {
+            background-color: #1a365d !important;
+            color: white !important;
+            font-weight: bold;
+        }
+
+        .detail-card {
+            border-left: 5px solid #ffc107 !important;
+        }
+        /* 黃金左邊條 */
+    </style>
+</head>
+<body class="bg-light text-dark">
+
+    <!-- 頂部導覽 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm mb-4">
+        <div class="container border-0">
+            <a class="navbar-brand fw-bold" href="/">↩️ 返回我的本地 SQL 大數據預測庫主頁</a>
+            <span class="badge bg-success p-2 fs-6">📊 官方正式排位表即時對接模式</span>
+        </div>
+    </nav>
+
+    <div class="container my-4">
+        <!-- 🎯 場次切換控制台 -->
+        <div class="card bg-white border-0 p-3 mb-4 shadow-sm text-center">
+            <h5 class="fw-bold mb-3 text-primary">📅 請選擇欲載入顯示的馬會開鑼日賽事場次：</h5>
+            <div class="d-flex flex-wrap justify-content-center gap-2">
+                {% for r in races %}
+                <!-- 💡 自動綁定人手指定之 race_date_str 與 venue_code 的動態按鈕網址 -->
+                <a href="/hkjc_live/{{ race_date_str }}/{{ venue_code }}/{{ r }}"
+                   class="btn race-btn {% if r == current_race %}btn-primary text-white shadow{% else %}btn-outline-secondary{% endif %}">
+                    第 {{ r }} 場
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 💡 新增：1:1 實時渲染您截圖中的四行賽事詳情看板 -->
+        <div class="card bg-white border-0 shadow-sm p-4 mb-4 detail-card">
+            <div class="row align-items-center">
+                <div class="col-md-9">
+                    <h3 class="fw-bold text-dark mb-2">{{ race_details.title }}</h3>
+                    <div class="text-secondary fs-5 mb-1">📅 {{ race_details.datetime }}</div>
+                    <div class="text-primary fw-bold fs-5 mb-1">🌱 {{ race_details.track }}</div>
+                    <div class="text-muted small fs-6">💰 {{ race_details.class_prize }}</div>
+                </div>
+                <div class="col-md-3 text-end">
+                    <button onclick="window.location.reload();" class="btn btn-outline-primary fw-bold py-2 px-3">
+                        🔄 重新整理排位 (Refresh)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 📊 馬會排位表即時大表 -->
+        <div class="card shadow border-0 bg-white">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped table-racing mb-0 text-center align-middle">
+                        <thead>
+                            <tr class="fs-6">
+                                <th style="width: 80px;">馬匹編號</th>
+                                <th>6次近績走勢</th>
+                                <th class="text-start ps-4">參賽馬名 [烙印編號]</th>
+                                <th>分配負磅</th>
+                                <th>預計騎師</th>
+                                <th>排位檔位</th>
+                                <th>所屬練馬師</th>
+                                <th class="text-danger fw-bold fs-5">當前評分</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if race_horses %}
+                            {% for horse in race_horses %}
+                            <tr>
+                                <td class="fw-bold fs-5 text-muted">{{ horse.num }}</td>
+                                <td class="text-secondary small fw-bold">{{ horse.history }}</td>
+                                <td class="fw-bold text-primary text-start ps-4 fs-5">{{ horse.name }}</td>
+                                <td class="fw-bold">{{ horse.weight }}</td>
+                                <td class="text-success fw-bold">{{ horse.jockey }}</td>
+                                <td><span class="badge bg-dark p-2 px-3 fs-6">{{ horse.draw }}</span></td>
+                                <td class="fw-bold text-dark">{{ horse.trainer }}</td>
+                                <td class="text-danger fw-bold fs-4 bg-light">{{ horse.rating }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% else %}
+                            <tr>
+                                <td colspan="8" class="p-5 text-muted fs-5 fw-bold">📭 提示：此場次之官方即時排位表尚未出版（或本日無此場次賽事）。</td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
