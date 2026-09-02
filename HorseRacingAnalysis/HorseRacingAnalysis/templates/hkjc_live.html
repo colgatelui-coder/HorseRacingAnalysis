@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🌐 馬會官方最新賽事排位表</title>
-    <!-- 引入美化網頁的 CSS 框架 -->
+    <title>🌐 馬會官方最新賽事排位表 (智能聽話填號版)</title>
     <link href="https://jsdelivr.net" rel="stylesheet">
     <style>
         .race-btn {
@@ -16,13 +15,47 @@
         .table-racing th {
             background-color: #1a365d !important;
             color: white !important;
-            font-weight: bold;
         }
 
         .detail-card {
             border-left: 5px solid #ffc107 !important;
         }
-        /* 黃金左邊條 */
+
+        .recommend-box {
+            background-color: #fff9e6;
+            border: 2px dashed #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .row-excluded {
+            opacity: 0.55;
+            background-color: #f8f9fa !important;
+        }
+
+        .pool-btn {
+            font-weight: bold;
+            padding: 10px 5px;
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+
+        .calculator-box {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .smart-pick-text {
+            font-size: 1.05rem;
+            font-weight: bold;
+            color: #198754;
+            background-color: #e8f5e9;
+            padding: 8px 15px;
+            border-radius: 6px;
+            border: 1px solid #c8e6c9;
+        }
     </style>
 </head>
 <body class="bg-light text-dark">
@@ -30,43 +63,93 @@
     <!-- 頂部導覽 -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm mb-4">
         <div class="container border-0">
-            <a class="navbar-brand fw-bold" href="/">↩️ 返回我的本地 SQL 大數據預測庫主頁</a>
-            <span class="badge bg-success p-2 fs-6">📊 官方正式排位表即時對接模式</span>
+            <a class="navbar-brand fw-bold" href="/">↩️ 返回預測庫主頁</a>
+            <span class="badge bg-success p-2 fs-6 fw-bold">🎯 智能聽話填號引擎已完美激活</span>
         </div>
     </nav>
 
     <div class="container my-4">
-        <!-- 🎯 場次切換控制台 -->
+        <!-- 🎯 場次切換 -->
         <div class="card bg-white border-0 p-3 mb-4 shadow-sm text-center">
-            <h5 class="fw-bold mb-3 text-primary">📅 請選擇欲載入顯示的馬會開鑼日賽事場次：</h5>
+            <h5 class="fw-bold mb-3 text-primary">📅 請選擇欲載入顯示的馬會賽事場次：</h5>
             <div class="d-flex flex-wrap justify-content-center gap-2">
                 {% for r in races %}
-                <!-- 💡 自動綁定人手指定之 race_date_str 與 venue_code 的動態按鈕網址 -->
-                <a href="/hkjc_live/{{ race_date_str }}/{{ venue_code }}/{{ r }}"
-                   class="btn race-btn {% if r == current_race %}btn-primary text-white shadow{% else %}btn-outline-secondary{% endif %}">
-                    第 {{ r }} 場
-                </a>
+                <a href="/hkjc_live/{{ race_date_str }}/{{ venue_code }}/{{ r }}" class="btn race-btn {% if r == current_race %}btn-primary text-white shadow{% else %}btn-outline-secondary{% endif %}">第 {{ r }} 場</a>
                 {% endfor %}
             </div>
         </div>
 
-        <!-- 💡 新增：1:1 實時渲染您截圖中的四行賽事詳情看板 -->
+        <!-- 💡 賽事詳情 + 🏆 智能黃金推介 -->
         <div class="card bg-white border-0 shadow-sm p-4 mb-4 detail-card">
             <div class="row align-items-center">
-                <div class="col-md-9">
+                <div class="col-md-7">
                     <h3 class="fw-bold text-dark mb-2">{{ race_details.title }}</h3>
                     <div class="text-secondary fs-5 mb-1">📅 {{ race_details.datetime }}</div>
                     <div class="text-primary fw-bold fs-5 mb-1">🌱 {{ race_details.track }}</div>
                     <div class="text-muted small fs-6">💰 {{ race_details.class_prize }}</div>
                 </div>
-                <div class="col-md-3 text-end">
-                    <button onclick="window.location.reload();" class="btn btn-outline-primary fw-bold py-2 px-3">
-                        🔄 重新整理排位 (Refresh)
-                    </button>
+                <div class="col-md-5">
+                    <div class="recommend-box text-center shadow-sm">
+                        <h4 class="fw-bold text-danger mb-2">🏆 智能排除法．黃金推介</h4>
+                        <div class="display-5 fw-bold text-dark bg-white py-1 rounded shadow-sm border" id="raw_recommend_numbers" style="letter-spacing: 2px;">
+                            {{ recommend_str }}
+                        </div>
+                        <small class="text-muted d-block mt-2">※ 您可在下方自行輸入預期加載的馬膽馬腳數量</small>
+                    </div>
                 </div>
             </div>
         </div>
 
+        <!-- 🧮 賽馬智能注數計算機控制台 -->
+        <div class="card bg-white border-0 shadow-sm p-4 mb-4" style="border-left: 5px solid #0d6efd !important;">
+            <h4 class="fw-bold text-primary mb-3">🗄️ 賽馬注數計算機</h4>
+
+            <div class="row g-2 mb-3">
+                <div class="col-md-3">
+                    <button class="btn btn-outline-primary w-100 pool-btn" id="btn_wp" onclick="selectPool('wp')">🎫 獨贏 / 位置</button>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-outline-primary w-100 pool-btn" id="btn_q" onclick="selectPool('q')">🎫 連贏/位置Q/二重彩</button>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-outline-primary w-100 pool-btn" id="btn_t" onclick="selectPool('t')">🎫 三重彩 / 單T</button>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-outline-primary w-100 pool-btn" id="btn_f" onclick="selectPool('f')">🎫 四連環 / 四重彩</button>
+                </div>
+            </div>
+
+            <!-- 幸運號碼獨立手動觸發按鈕區 -->
+            <div class="mb-3" id="lucky_zone" style="display: none;">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <button class="btn btn-danger fw-bold py-2 px-4 shadow-sm" style="font-size:1.05rem;" onclick="generateLuckyNumbers()">
+                        🎲 產生幸運號碼 (Lucky Pick)
+                    </button>
+                    <div class="flex-grow-1" id="smart_pick_display" style="display: none;">
+                        <div class="smart-pick-text" id="smart_pick_msg">🔮 請點選上方按鈕隨機派號...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 馬膽馬腳數量輸入區 -->
+            <div class="calculator-box" id="input_zone" style="display: none;">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-3" id="dan_container">
+                        <label class="form-label fw-bold text-dark" id="lbl_dan">🐴 輸入馬膽數量：</label>
+                        <input type="number" id="num_dan" class="form-control form-control-lg border-2" min="0" value="1" oninput="calculateBets()">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold text-dark" id="lbl_jiao">🐴 輸入馬腳數量：</label>
+                        <input type="number" id="num_jiao" class="form-control form-control-lg border-2" min="0" value="4" oninput="calculateBets()">
+                    </div>
+                    <div class="col-md-6 text-end bg-white p-3 rounded shadow-sm border border-2 border-primary ms-auto" style="max-width: 360px;">
+                        <span class="fw-bold text-secondary fs-6">📊 注數總結：</span>
+                        <span class="display-6 fw-bold text-primary mx-1" id="lbl_total_bets">0</span><span class="fw-bold text-dark fs-6">注</span>
+                        <div class="text-muted small mt-1" id="lbl_price_summary">每注 $10 基準 ｜ 總金額: $0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <!-- 📊 馬會排位表即時大表 -->
         <div class="card shadow border-0 bg-white">
             <div class="card-body p-0">
@@ -74,34 +157,42 @@
                     <table class="table table-hover table-striped table-racing mb-0 text-center align-middle">
                         <thead>
                             <tr class="fs-6">
-                                <th style="width: 80px;">馬匹編號</th>
-                                <th>6次近績走勢</th>
-                                <th class="text-start ps-4">參賽馬名 [烙印編號]</th>
+                                <th style="width: 70px;">馬號</th>
+                                <th>6次近績</th>
+                                <th class="text-start ps-3">參賽馬名</th>
                                 <th>分配負磅</th>
                                 <th>預計騎師</th>
-                                <th>排位檔位</th>
-                                <th>所屬練馬師</th>
-                                <th class="text-danger fw-bold fs-5">當前評分</th>
+                                <th>檔位</th>
+                                <th>練馬師</th>
+                                <th>評分</th>
+                                <th class="text-primary">本地黃金區間</th>
+                                <th class="text-dark">🛡️ 篩選狀態</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% if race_horses %}
                             {% for horse in race_horses %}
-                            <tr>
-                                <td class="fw-bold fs-5 text-muted">{{ horse.num }}</td>
+                            <tr class="{% if horse.is_excluded %}row-excluded{% endif %}">
+                                <td class="fw-bold text-muted">{{ horse.num }}</td>
                                 <td class="text-secondary small fw-bold">{{ horse.history }}</td>
-                                <td class="fw-bold text-primary text-start ps-4 fs-5">{{ horse.name }}</td>
-                                <td class="fw-bold">{{ horse.weight }}</td>
-                                <td class="text-success fw-bold">{{ horse.jockey }}</td>
-                                <td><span class="badge bg-dark p-2 px-3 fs-6">{{ horse.draw }}</span></td>
-                                <td class="fw-bold text-dark">{{ horse.trainer }}</td>
-                                <td class="text-danger fw-bold fs-4 bg-light">{{ horse.rating }}</td>
+                                <td class="fw-bold text-primary text-start ps-3 fs-5">{{ horse.name }}</td>
+                                <td class="small">{{ horse.weight }}</td>
+                                <td class="text-success fw-bold small">{{ horse.jockey }}</td>
+                                <td><span class="badge bg-dark p-2 px-2">{{ horse.draw }}</span></td>
+                                <td class="small">{{ horse.trainer }}</td>
+                                <td class="fw-bold fs-5 bg-light">{{ horse.rating }}</td>
+                                <td><span class="badge bg-light text-primary border border-primary fw-bold">{{ horse.gold_range }}</span></td>
+                                <td class="text-start ps-2">
+                                    {% if horse.is_excluded %}
+                                    <span class="text-danger fw-bold small" style="font-size:0.8rem;">{{ horse.exclusion_reason }}</span>
+                                    {% else %}
+                                    <span class="badge bg-success p-2">✨ 通過推介</span>
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% endfor %}
                             {% else %}
-                            <tr>
-                                <td colspan="8" class="p-5 text-muted fs-5 fw-bold">📭 提示：此場次之官方即時排位表尚未出版（或本日無此場次賽事）。</td>
-                            </tr>
+                            <tr><td colspan="10" class="p-5 text-muted fw-bold">📭 提示：此場次之官方即時排位表尚未出版。</td></tr>
                             {% endif %}
                         </tbody>
                     </table>
@@ -109,5 +200,155 @@
             </div>
         </div>
     </div>
+
+    <!-- 💡 JavaScript：互斥單選控制與【智慧聽話填號引擎】 -->
+    <script>
+        let currentSelectedPool = "";
+
+        function selectPool(poolCode) {
+            currentSelectedPool = poolCode;
+
+            const buttons = ["wp", "q", "t", "f"];
+            buttons.forEach(b => {
+                document.getElementById("btn_" + b).className = "btn btn-outline-primary w-100 pool-btn";
+            });
+            document.getElementById("btn_" + poolCode).className = "btn btn-primary w-100 pool-btn text-white shadow";
+
+            document.getElementById("input_zone").style.display = "block";
+            document.getElementById("lucky_zone").style.display = "block";
+            document.getElementById("smart_pick_display").style.display = "none";
+
+            // 💡 體驗提升：點擊彩池切換時，給予最常用的實戰初始預設值 (1膽 4腳)，不再強行歸零
+            if (poolCode === "wp") {
+                document.getElementById("num_dan").value = 0;
+                document.getElementById("num_jiao").value = 4;
+            } else {
+                document.getElementById("num_dan").value = 1;
+                document.getElementById("num_jiao").value = 4;
+            }
+
+            const danContainer = document.getElementById("dan_container");
+            if (poolCode === "wp") {
+                danContainer.style.display = "none";
+                document.getElementById("lbl_jiao").innerHTML = "🐴 輸入選擇馬匹數量：";
+            } else {
+                danContainer.style.display = "block";
+                document.getElementById("lbl_jiao").innerHTML = "🐴 輸入馬腳數量：";
+                if (poolCode === "q") document.getElementById("lbl_dan").innerHTML = "🐴 輸入馬膽數量 (最多1膽)：";
+                if (poolCode === "t") document.getElementById("lbl_dan").innerHTML = "🐴 輸入馬膽數量 (最多2膽)：";
+                if (poolCode === "f") document.getElementById("lbl_dan").innerHTML = "🐴 輸入馬膽數量 (最多3膽)：";
+            }
+            calculateBets();
+        }
+
+        function generateLuckyNumbers() {
+            if (!currentSelectedPool) {
+                alert("請先選擇上方任一個欲投注的彩池！");
+                return;
+            }
+
+            document.getElementById("smart_pick_display").style.display = "block";
+            const rawText = document.getElementById("raw_recommend_numbers").innerText.trim();
+
+            if (!rawText || rawText.includes("無符合") || rawText.includes("暫無")) {
+                document.getElementById("smart_pick_msg").innerHTML = "⚠️ 本場次無推薦馬，無法產生隨機組合。";
+                return;
+            }
+
+            let recommendArray = rawText.split(",").map(s => s.trim()).filter(s => s !== "");
+
+            // 💡 1. 讀取使用者「目前手動輸入」的膽、腳期望數量！
+            let targetDanCount = parseInt(document.getElementById("num_dan").value);
+            let targetJiaoCount = parseInt(document.getElementById("num_jiao").value);
+
+            // 如果輸入框空了或不合法，給予智慧兜底
+            if (isNaN(targetDanCount) || targetDanCount < 0) targetDanCount = (currentSelectedPool === "wp") ? 0 : 1;
+            if (isNaN(targetJiaoCount) || targetJiaoCount <= 0) targetJiaoCount = 4;
+
+            // 限制馬膽最大安全上限 (防範馬會規則溢出)
+            if (currentSelectedPool === "q" && targetDanCount > 1) targetDanCount = 1;
+            if (currentSelectedPool === "t" && targetDanCount > 2) targetDanCount = 2;
+            if (currentSelectedPool === "f" && targetDanCount > 3) targetDanCount = 3;
+
+            // 💡 2. 隨機洗牌打亂黃金推薦馬名單
+            for (let i = recommendArray.length - 1; i > 0; i--) {
+                const r = Math.floor(Math.random() * (i + 1));
+                const temp = recommendArray[i];
+                recommendArray[i] = recommendArray[r];
+                recommendArray[r] = temp;
+            }
+
+            let danHorses = [], jiaoHorses = [];
+
+            // 💡 3. 精密防線：完全遵照使用者的數量指令進行隨機抽取！
+            if (currentSelectedPool === "wp") {
+                // 獨贏直接抽取指定的馬腳數
+                jiaoHorses = recommendArray.slice(0, targetJiaoCount);
+                targetDanCount = 0;
+            } else {
+                // 抽出指定數量的馬膽
+                danHorses = recommendArray.slice(0, targetDanCount);
+                // 從剩下的名單中，抽出使用者指定數量的馬腳！(完美解決全選7的問題)
+                let remainingHorses = recommendArray.slice(targetDanCount);
+                jiaoHorses = remainingHorses.slice(0, targetJiaoCount);
+            }
+
+            // 💡 反向校正：把真正能抽到的有效數量回填輸入框
+            document.getElementById("num_dan").value = danHorses.length;
+            document.getElementById("num_jiao").value = jiaoHorses.length;
+
+            // 生成文字報告展示
+            const msgDiv = document.getElementById("smart_pick_msg");
+            const showDan = danHorses.sort((a, b) => a - b).join(", ");
+            const showJiao = jiaoHorses.sort((a, b) => a - b).join(", ");
+
+            if (currentSelectedPool === "wp") {
+                msgDiv.innerHTML = "🎲 幸運精選獨贏/位置：已為您精選 " + jiaoHorses.length + " 匹馬 ➔ ［ " + showJiao + " 號 ］";
+            } else {
+                let poolName = (currentSelectedPool === 'q') ? "連贏/位置Q" : (currentSelectedPool === 't') ? "單T/三重彩" : "四連環";
+                if (danHorses.length > 0) {
+                    msgDiv.innerHTML = "🎲 聽話拖牌：投注【" + poolName + "】，依您指令隨機抽出 ➔ ［ " + showDan + " 號 ］作馬膽，拖您指定的 " + jiaoHorses.length + " 隻馬腳 ➔ ［ " + showJiao + " 號 ］";
+                } else {
+                    msgDiv.innerHTML = "🎲 聽話複式：依您指定數量互串複式 ➔ ［ " + showJiao + " 號 ］";
+                }
+            }
+            calculateBets();
+        }
+
+        function combination(n, k) {
+            if (k < 0 || k > n) return 0;
+            if (k === 0 || k === n) return 1;
+            if (k > n / 2) k = n - k;
+            let num = 1, den = 1;
+            for (let i = 1; i <= k; i++) { num *= (n - i + 1); den *= i; }
+            return num / den;
+        }
+
+        function calculateBets() {
+            if (!currentSelectedPool) return;
+            const d = parseInt(document.getElementById("num_dan").value) || 0;
+            const j = parseInt(document.getElementById("num_jiao").value) || 0;
+            let totalBets = 0;
+
+            if (currentSelectedPool === "wp") {
+                totalBets = j;
+            } else if (currentSelectedPool === "q") {
+                totalBets = (d === 0) ? combination(j, 2) : combination(j, 1);
+            } else if (currentSelectedPool === "t") {
+                if (d === 0) totalBets = combination(j, 3);
+                if (d === 1) totalBets = combination(j, 2);
+                if (d === 2) totalBets = combination(j, 1);
+            } else if (currentSelectedPool === "f") {
+                if (d === 0) totalBets = combination(j, 4);
+                if (d === 1) totalBets = combination(j, 3);
+                if (d === 2) totalBets = combination(j, 2);
+                if (d === 3) totalBets = combination(j, 1);
+            }
+
+            document.getElementById("lbl_total_bets").innerHTML = totalBets;
+            document.getElementById("lbl_price_summary").innerHTML =
+                "每注 $10 基準 ｜ 總金額: $" + (totalBets * 10).toLocaleString();
+        }
+    </script>
 </body>
 </html>
