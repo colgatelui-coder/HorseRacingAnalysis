@@ -43,6 +43,7 @@
     <Content Include=".vercelignore" />
     <Content Include="HorseRacingAnalysis\templates\hkjc_live.html" />
     <Content Include="HorseRacingAnalysis\vercel.json" />
+    <Content Include="pyproject.toml" />
     <Content Include="requirements.txt" />
     <Content Include="HorseRacingAnalysis\static\content\bootstrap.css" />
     <Content Include="HorseRacingAnalysis\static\content\bootstrap.min.css" />
