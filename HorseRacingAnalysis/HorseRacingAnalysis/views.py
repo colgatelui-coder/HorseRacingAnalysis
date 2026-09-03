@@ -456,7 +456,6 @@ def view_race(race_date_str, venue_code, race_no):
                             has_real_injury = False
                             is_new_horse = True
                             
-                            # 💡 建立最高時間物件容器 (完全符合 Pandas 原生時間轴)
                             latest_top3_dt = None
                             latest_injury_dt = None
 
@@ -484,7 +483,6 @@ def view_race(race_date_str, venue_code, race_no):
                                             top3_history['評分'], 
                                             errors='coerce').max())
                                         
-                                        # 💡 原生安全日期解碼：全自動相容斜線與橫線
                                         top3_history['dt'] = pd.to_datetime(
                                             top3_history['日期'], 
                                             errors='coerce', dayfirst=True
@@ -515,12 +513,10 @@ def view_race(race_date_str, venue_code, race_no):
                                     db_injuries['馬名'] == pure_horse_name
                                 ].copy()
                                 if not horse_injuries.empty:
-                                    # 💡 原生安全日期解碼傷患日期
                                     horse_injuries['dt'] = pd.to_datetime(
                                         horse_injuries['傷患日期'], 
                                         errors='coerce', dayfirst=True
                                     )
-                                    
                                     for _, inj_row in horse_injuries.iterrows():
                                         detail_text = str(inj_row['詳情'])
                                         if any(kw in detail_text 
@@ -534,14 +530,13 @@ def view_race(race_date_str, venue_code, race_no):
                                                    inj_row['dt'] > latest_injury_dt:
                                                     latest_injury_dt = inj_row['dt']
 
-                            # 💡 終極平反核對：如果最後上名日期「晚於」最後受傷日期，強制洗底！
                             if has_real_injury and latest_top3_dt is not None \
                                and latest_injury_dt is not None:
                                 if latest_top3_dt > latest_injury_dt:
-                                    has_real_injury = False # 完美判定健康！
+                                    has_real_injury = False 
 
                             # -------------------------------------------------
-                            # 🛡️ 智能三重篩選排除防線判定
+                            # 🛡️ 智能四重篩選排除防線判定 (純日期推算馬季版)
                             # -------------------------------------------------
                             if has_real_injury:
                                 is_excluded = True
@@ -562,6 +557,37 @@ def view_race(race_date_str, venue_code, race_no):
                                     f"[🆕新馬/插班馬]，且所屬馬房" \
                                     f"【{trainer_clean}】已列入冷門名單。"
 
+                            # 💡 ✨ 核心升級：利用【日期欄位】完美推算 25/26 馬季出賽，徹底擺脫對季度欄位的依賴
+                            if not is_excluded and not is_new_horse and not horse_history_races.empty:
+                                try:
+                                    # 先將歷史賽績中的「日期」統一轉換為時間物件
+                                    horse_history_races['r_dt'] = pd.to_datetime(
+                                        horse_history_races['日期'], errors='coerce', dayfirst=True
+                                    )
+                                    
+                                    # 篩選 25/26 馬季的比賽條件：
+                                    # 條件一：2025年 9月至12月
+                                    cond_2025 = (horse_history_races['r_dt'].dt.year == 2025) & (horse_history_races['r_dt'].dt.month >= 9)
+                                    # 條件二：2026年 1月至7月
+                                    cond_2026 = (horse_history_races['r_dt'].dt.year == 2026) & (horse_history_races['r_dt'].dt.month <= 7)
+                                    
+                                    # 執行精確馬季過濾
+                                    season_races = horse_history_races[cond_2025 | cond_2026]
+                                    
+                                    if len(season_races) > 5:
+                                        season_top3 = season_races[season_races['名次_數'] <= 3]
+                                        if len(season_top3) == 0:
+                                            age_val = season_races.iloc[-1].get('當前年齡', 5)
+                                            try: horse_age_int = int(float(str(age_val).strip()))
+                                            except: horse_age_int = 5
+                                            
+                                            is_excluded = True
+                                            if horse_age_int >= 6:
+                                                exclusion_reason = f"❌ 排除：25/26季出賽{len(season_races)}場未曾上名，且({horse_age_int}歲)退化老馬。"
+                                            else:
+                                                exclusion_reason = f"❌ 排除：25/26季出賽{len(season_races)}場未曾上名，且({horse_age_int}歲)能力不足。"
+                                except: pass
+
                             if not is_excluded:
                                 recommend_numbers.append(num)
 
@@ -571,6 +597,7 @@ def view_race(race_date_str, venue_code, race_no):
                                 gold_label = "🆕 新馬/插班馬"
                             else:
                                 gold_label = "📉 查有賽績/未曾上名"
+
 
                             race_horses.append({
                                 'num': num, 'history': history, 
