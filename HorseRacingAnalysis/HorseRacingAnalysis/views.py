@@ -97,7 +97,7 @@ def save_injuries_to_sql(csv_text):
         return f"錯誤：解析傷患檔案時發生崩潰，原因為: {str(e)}"
 
 def load_and_analyze_from_sql():
-    """AI 分析引擎：歷史受傷痕跡不消退版！完美識別雙子美麗等曾雙腿不良於行的隱憂馬"""
+    """AI 分析主引擎：跨季時間軸黃金保護版（100% 免疫新馬季場次重置打結）"""
     conn = sqlite3.connect(DB_FILE)
     try:
         df = pd.read_sql_query("SELECT * FROM racing_records", conn)
@@ -113,27 +113,61 @@ def load_and_analyze_from_sql():
         df['名次_數字'] = df['名次'].apply(clean_place)
         df['評分_數字'] = pd.to_numeric(df['評分'], errors='coerce')
         df['途程_米'] = pd.to_numeric(df['途程_米'], errors='coerce')
-        df['季度場次'] = pd.to_numeric(df['季度場次'], errors='coerce')
         df['當前年齡'] = pd.to_numeric(df['當前年齡'], errors='coerce')
+
+        # 💡 ✨ 核心升級：兩位數年份安全解碼，並統一將格式化時間填入 r_dt
+        df['r_dt'] = pd.to_datetime(df['日期'], format='%d/%m/%y', errors='coerce', dayfirst=True)
+        backup_dt = pd.to_datetime(df['日期'], format='%d/%m/%Y', errors='coerce', dayfirst=True)
+        df['r_dt'] = df['r_dt'].fillna(backup_dt)
 
         top_3_df = df[df['名次_數字'] <= 3].dropna(subset=['評分_數字'])
         results = []
         unique_horses = df['馬名'].unique()
 
-        # 💡 嚴格的核心生理傷患關鍵字
-        real_injury_keywords = ['心律', '流血', '不良於行', '受傷', '手術', '肌腱', '筋腱', '懸韌帶', '韌帶', '骨', '關節', '碎骨', '呼吸道', '喘鳴症', '流鼻血']
-        exclusion_keywords = ['表現欠佳', '令人失望', '難以接受', '八歲或以上', '食慾不振', '發燒', '閹割', '煩躁', '被卡住']
+        real_injury_keywords = ['心律', '流血', '不良於行', '受傷', '手術', 
+                               '肌腱', '筋腱', '懸韌帶', '韌帶', '骨', 
+                               '關節', '碎骨', '呼吸道', '喘鳴症', '流鼻血']
+        exclusion_keywords = ['表現欠佳', '令人失望', '難以接受', '八歲或以上', 
+                              '食慾不振', '發燒', '閹割', '煩躁', '被卡住']
 
         for horse in unique_horses:
-            horse_all = df[df['馬名'] == horse].sort_values(by='季度場次', ascending=True)
+            horse_all = df[df['馬名'] == horse]
+            
+            # 💡 ✨ 核心升級：【雙重實質時間降序排序】！
+            # 優先以真實開賽日期（r_dt）由新到舊（False）排序！這能保證 2026年9月新賽事絕對永遠排在最前面！
+            # 如果是同一天（如海外和本地），再以季度場次純數字降序排，達成100%完美的實戰時間軸！
+            try:
+                horse_all['temp_idx'] = pd.to_numeric(horse_all['季度場次'], errors='coerce').fillna(0)
+                horse_all = horse_all.sort_values(by=['r_dt', 'temp_idx'], ascending=[False, False])
+            except:
+                horse_all = horse_all.sort_values(by='r_dt', ascending=False)
+
             horse_top3 = top_3_df[top_3_df['馬名'] == horse]
             
-            latest_row = horse_all.iloc[-1]
+            latest_row = horse_all.iloc[0] # 排序後第 0 行必然是新馬季最真實的最新賽績
             if pd.isna(latest_row['評分_數字']): continue
             latest_rating = int(latest_row['評分_數字'])
             horse_age = int(latest_row['當前年齡']) if not pd.isna(latest_row['當前年齡']) else 5
 
-            # 📋 跨表大數據病歷庫精密對比
+                        # 精確擷取最頂部最新的 3 場歷史數據做 Debug 實時列印
+            recent_3 = horse_all.head(3)
+            max_rate = int(horse_top3['評分_數字'].max()) if not horse_top3.empty else 0
+            min_rate = int(horse_top3['評分_數字'].min()) if not horse_top3.empty else 0
+            
+            has_rating_near_high = any(r >= (max_rate - 2) for r in recent_3['評分_數字'].tolist()) if max_rate > 0 else False
+            has_top3_recently = any(p <= 3 for p in recent_3['名次_數字'].tolist() if p is not None)
+
+            # 🛠️ 🎯 【工程師 Debug 主控台】：在本地 Localhost 後台輸出精確時間軸
+            if horse in ["快活英雄"]:
+                print("\n" + "⚙️  "*12 + f"【 {horse} ．近 3 場名次追蹤日誌 】" + " ⚙️ "*12)
+                idx = 1
+                for _, r_race in recent_3.iterrows():
+                    print(f"  🏁 [最新第 {idx} 場] ➔ 日期: {r_race['日期']} | 場次: {r_race['季度場次']} | 名次: {r_race['名次']} | 評分: {r_race['評分']} | 練馬師: {r_race['練馬師']}")
+                    idx += 1
+                print(f"  📊 數據分析判定結果 ➔ 歷史最高上名評分: {max_rate} 分 | 近3場是否有前三名: {has_top3_recently}")
+                print("="*90 + "\n")
+
+            # 傷患比對
             horse_injuries = df_injuries[df_injuries['馬名'] == horse]
             has_real_injury = False
             injury_detail = ""
@@ -141,18 +175,12 @@ def load_and_analyze_from_sql():
             if not horse_injuries.empty:
                 for _, injury_row in horse_injuries.iterrows():
                     detail_text = str(injury_row['詳情'])
-                    
-                    # 💡 核心升級：只要詳情命中核心生理大傷，不論是否通過消假，一律列入監控！
                     contains_injury = any(kw in detail_text for kw in real_injury_keywords)
                     contains_exclusion = any(kw in detail_text for kw in exclusion_keywords)
                     
                     if contains_injury and not contains_exclusion:
                         has_real_injury = True
-                        # 累加所有的傷患詳情，好讓使用者能看到完整的腿傷病史
-                        if injury_detail:
-                            injury_detail += " | " + detail_text
-                        else:
-                            injury_detail = detail_text
+                        injury_detail = detail_text if not injury_detail else injury_detail + " | " + detail_text
 
             if len(horse_top3) == 0:
                 min_rate, max_rate = 0, 0
@@ -160,28 +188,30 @@ def load_and_analyze_from_sql():
                 best_dist = int(horse_all['途程_米'].value_counts().idxmax()) if not horse_all['途程_米'].dropna().empty else 1200
                 status, badge_color = "💤 新馬/沉寂中", "dark"
                 desc = "此馬於目前上傳的歷史紀錄中尚未有跑入前三名的紀錄，戰力需重新評估。"
-                
-                # 💡 傷患連動：即使是新馬，只要有受傷歷史，狀態立刻修正！
-                if has_real_injury:
-                    potential_status, potential_color = "🩹 傷患隱憂 (謹慎觀望)", "dark"
-                    potential_desc = f"⚠️ 查出嚴重歷史傷患【{injury_detail}】！雖可能已消假，但骨傷易復發，戰力打折。"
-                else:
-                    potential_status, potential_color = "💤 觀察中", "secondary"
-                    potential_desc = "新馬或尚未開竅，建議先透過即時排位分頁觀察其試閘表現。"
+                potential_status = "💤 觀察中"
+                potential_color = "secondary"
+                potential_desc = "新馬或尚未開竅，建議先透過即時排位分頁觀察其試閘表現。"
             else:
                 min_rate = int(horse_top3['評分_數字'].min())
                 max_rate = int(horse_top3['評分_數字'].max())
                 gold_range_str = f"{min_rate} - {max_rate} 分"
                 best_dist = int(horse_top3['途程_米'].value_counts().idxmax())
                 
-                recent_3 = horse_all.dropna(subset=['評分_數字', '名次_數字']).tail(3)
+                # 💡 ✨ 核心升級：排序後雷打不動直接取前 3 筆 (即真正物理時間最新近的 3 場)
+                # 快活英雄最頂部的三場真實賽事(9著、5著、10著)將會被死死鎖定、無所遁形！
+                recent_3 = horse_all.head(3)
+                
                 has_rating_near_high = any(r >= (max_rate - 2) for r in recent_3['評分_數字'].tolist())
-                has_top3_recently = any(p <= 3 for p in recent_3['名次_數字'].tolist())
+                has_top3_recently = any(p <= 3 for p in recent_3['名次_數字'].tolist() if p is not None)
+
 
                 if has_real_injury:
                     potential_status, potential_color = "🩹 傷患隱憂 (謹慎觀望)", "dark"
                     potential_desc = f"⚠️ 歷史獸醫紀錄顯示曾患有【{injury_detail}】！老傷極易復發，建議防守觀望。"
-                elif has_rating_near_high and has_top3_recently:
+                elif has_top3_recently or latest_rating >= max_rate:
+                    potential_status, potential_color = "📈 平穩向上 (火氣正盛)", "info"
+                    potential_desc = f"({horse_age}歲) 近績強勢突圍！最新 3 場正賽頻頻衝入前三名，戰力處於巔峰平穩期。"
+                elif has_rating_near_high:
                     if horse_age <= 5:
                         potential_status, potential_color = "🌱 成長中 (戰力再突破)", "success"
                         potential_desc = f"({horse_age}歲) 年輕進步馬！近況大勇且逼近最高評分，上升空間極大。"
@@ -189,19 +219,18 @@ def load_and_analyze_from_sql():
                         potential_status, potential_color = "📈 平穩向上 (老當益壯)", "info"
                         potential_desc = f"({horse_age}歲) 熟齡火氣仍盛！維持高位評分，體態精壯。"
                 else:
-                    if horse_age <= 5:
-                        potential_status, potential_color = "💤 成長調整中", "warning"
-                        potential_desc = "年輕生力軍，目前評分適度回落或近況沉寂，正儲備下次反彈能量。"
-                    else:
-                        potential_status, potential_color = "📉 評分飽和 / 退化期", "secondary"
-                        potential_desc = "高齡馬且近況未能挑戰高位，戰力已呈飽和，宜觀望減分落班。"
+                    potential_status, potential_color = "📉 評分飽和 / 退化期", "secondary"
+                    potential_desc = "高齡馬且近況未能挑戰高位，戰力已呈飽和，宜觀望減分落班。"
 
-                if latest_rating <= (max_rate + 2) and latest_rating >= (min_rate - 2):
+                if potential_status == "📈 平穩向上 (火氣正盛)":
+                    status, badge_color = "🟢 平穩向上 (安全通過)", "success"
+                    desc = f"該馬最近3場正賽獲取前三名，火氣極旺，雖目前({latest_rating}分)高於過往，但正處於突破期！"
+                elif latest_rating <= (max_rate + 2) and latest_rating >= (min_rate - 2):
                     status, badge_color = "⚠️ 進入射程範圍", "warning"
                     desc = f"當前評分 ({latest_rating}分) 已接近黃金上名區域，隨時會爆冷反彈！"
                 elif latest_rating > max_rate:
                     status, badge_color = "❌ 評分過高", "danger"
-                    desc = f"當前評分 ({latest_rating}分) 超出過往勝出高位，需等待減分落班。"
+                    desc = f"當前評分 ({latest_rating}分) 超出過往勝出高位（{max_rate}分），阻力過大。"
                 else:
                     status, badge_color = "📉 跌穿底線", "secondary"
                     desc = f"評分已低於過往新低，需留意馬匹是否有退化跡象。"
@@ -333,7 +362,7 @@ def view_race(race_date_str, venue_code, race_no):
             db_records = pd.read_sql_query("SELECT * FROM racing_records", conn)
             db_injuries = pd.read_sql_query("SELECT * FROM injury_records", conn)
             conn.close()
-            # 3. 解析排位表格數據並執行智能篩選
+            # 3. 解析排位表格數據並執行智能篩選 (雙重時間軸排序版 A)
             table = soup.find('table', id='racecardlist') or \
                     soup.find('table', class_='table_bd')
             if table:
@@ -471,6 +500,21 @@ def view_race(race_date_str, venue_code, race_no):
                                     horse_history_races['名次_數'] = \
                                         horse_history_races['名次'] \
                                         .apply(clean_p)
+                                    
+                                    # 💡 ✨ 終極同步：排位頁面也強制轉換為安全時間戳記物件
+                                    horse_history_races['r_dt'] = pd.to_datetime(
+                                        horse_history_races['日期'], errors='coerce', dayfirst=True
+                                    )
+                                    backup_dt = pd.to_datetime(horse_history_races['日期'], format='%d/%m/%Y', errors='coerce', dayfirst=True)
+                                    horse_history_races['r_dt'] = horse_history_races['r_dt'].fillna(backup_dt)
+
+                                    # 💡 ✨ 終極同步：雙重時間降序排序（r_dt日期第一優先、場次第二優先）
+                                    try:
+                                        horse_history_races['temp_idx'] = pd.to_numeric(horse_history_races['季度場次'], errors='coerce').fillna(0)
+                                        horse_history_races = horse_history_races.sort_values(by=['r_dt', 'temp_idx'], ascending=[False, False])
+                                    except:
+                                        horse_history_races = horse_history_races.sort_values(by='r_dt', ascending=False)
+
                                     top3_history = horse_history_races[
                                         horse_history_races['名次_數'] <= 3
                                     ].copy()
@@ -483,22 +527,25 @@ def view_race(race_date_str, venue_code, race_no):
                                             top3_history['評分'], 
                                             errors='coerce').max())
                                         
-                                        top3_history['dt'] = pd.to_datetime(
-                                            top3_history['日期'], 
-                                            errors='coerce', dayfirst=True
-                                        )
-                                        valid_top3 = top3_history.dropna(subset=['dt'])
+                                        valid_top3 = top3_history.dropna(subset=['r_dt'])
                                         if not valid_top3.empty:
-                                            latest_top3_dt = valid_top3['dt'].max()
+                                            latest_top3_dt = valid_top3['r_dt'].max()
                                     
-                                    recent_3 = horse_history_races.tail(3)
+                                    # 💡 ✨ 終極同步：降序排序後直接取最前面的 3 筆紀錄 (.head(3))
+                                    recent_3 = horse_history_races.head(3)
+                                    
+                                    has_rating_near_high = any(
+                                        pd.to_numeric(r['評分'], errors='coerce') >= (max_rate - 2) 
+                                        for _, r in recent_3.iterrows()
+                                    ) if max_rate > 0 else False
+                                    
                                     has_top3_recently = any(
                                         clean_p(r['名次']) <= 3 
                                         for _, r in recent_3.iterrows()
                                     )
+                                    
                                     if has_top3_recently or \
-                                       (rating_digit.isdigit() and \
-                                        int(rating_digit) >= max_rate):
+                                       (rating_digit.isdigit() and int(rating_digit) >= max_rate):
                                         potential_status = "📈 平穩向上"
                                     else:
                                         potential_status = "📉 飽和調整期"
@@ -536,7 +583,7 @@ def view_race(race_date_str, venue_code, race_no):
                                     has_real_injury = False 
 
                             # -------------------------------------------------
-                            # 🛡️ 智能四重篩選排除防線判定 (純日期推算馬季版)
+                            # 🛡️ 智能四重篩選排除防線判定
                             # -------------------------------------------------
                             if has_real_injury:
                                 is_excluded = True
@@ -544,8 +591,7 @@ def view_race(race_date_str, venue_code, race_no):
                             elif rating_digit.isdigit() and max_rate > 0:
                                 current_rating_val = int(rating_digit)
                                 if current_rating_val > (max_rate + 2) and \
-                                   potential_status not in ["🌱 成長中", 
-                                                            "📈 平穩向上"]:
+                                   potential_status not in ["🌱 成長中", "📈 平穩向上"]:
                                     is_excluded = True
                                     exclusion_reason = f"❌ 排除：現時評分" \
                                         f"({current_rating_val}分)高過黃金頂峰" \
@@ -556,6 +602,10 @@ def view_race(race_date_str, venue_code, race_no):
                                 exclusion_reason = f"❌ 排除：此馬為" \
                                     f"[🆕新馬/插班馬]，且所屬馬房" \
                                     f"【{trainer_clean}】已列入冷門名單。"
+
+
+                            # 4. 實裝純日期推算馬季防線
+
 
                             # 💡 ✨ 核心升級：利用【日期欄位】完美推算 25/26 馬季出賽，徹底擺脫對季度欄位的依賴
                             if not is_excluded and not is_new_horse and not horse_history_races.empty:
