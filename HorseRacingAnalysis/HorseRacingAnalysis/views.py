@@ -97,7 +97,7 @@ def save_injuries_to_sql(csv_text):
         return f"錯誤：解析傷患檔案時發生崩潰，原因為: {str(e)}"
 
 def load_and_analyze_from_sql():
-    """AI 分析主引擎：跨季時間軸黃金保護版（100% 免疫新馬季場次重置打結）"""
+    """AI 分析主引擎：以可加載基石代碼重塑之全新四階漏斗防線對齊版"""
     conn = sqlite3.connect(DB_FILE)
     try:
         df = pd.read_sql_query("SELECT * FROM racing_records", conn)
@@ -112,10 +112,19 @@ def load_and_analyze_from_sql():
 
         df['名次_數字'] = df['名次'].apply(clean_place)
         df['評分_數字'] = pd.to_numeric(df['評分'], errors='coerce')
-        df['途程_米'] = pd.to_numeric(df['途程_米'], errors='coerce')
-        df['當前年齡'] = pd.to_numeric(df['當前年齡'], errors='coerce')
+        
+        # 💡 安全對齊：確保途程(米)與途程_米百分之百能順暢相容讀取
+        if '途程(米)' in df.columns:
+            df['途程_米'] = pd.to_numeric(df['途程(米)'], errors='coerce')
+        else:
+            df['途程_米'] = pd.to_numeric(df.get('途程_米', 1200), errors='coerce')
+            
+        if '當前年齡' in df.columns:
+            df['當前年齡_num'] = pd.to_numeric(df['當前年齡'], errors='coerce')
+        else:
+            df['當前年齡_num'] = pd.to_numeric(df.get('年齡', 5), errors='coerce')
 
-        # 💡 ✨ 核心升級：兩位數年份安全解碼，並統一將格式化時間填入 r_dt
+        # 兩位數年份安全解碼
         df['r_dt'] = pd.to_datetime(df['日期'], format='%d/%m/%y', errors='coerce', dayfirst=True)
         backup_dt = pd.to_datetime(df['日期'], format='%d/%m/%Y', errors='coerce', dayfirst=True)
         df['r_dt'] = df['r_dt'].fillna(backup_dt)
@@ -129,35 +138,116 @@ def load_and_analyze_from_sql():
                                '關節', '碎骨', '呼吸道', '喘鳴症', '流鼻血']
         exclusion_keywords = ['表現欠佳', '令人失望', '難以接受', '八歲或以上', 
                               '食慾不振', '發燒', '閹割', '煩躁', '被卡住']
+        black_trainers = ["丁冠豪", "大衛希斯", "葉楚航", "鄭俊偉", "徐雨石"]
 
         for horse in unique_horses:
-            horse_all = df[df['馬名'] == horse]
+            horse_all = df[df['馬名'] == horse].copy()
             
-            # 💡 ✨ 核心升級：【雙重實質時間降序排序】！
-            # 優先以真實開賽日期（r_dt）由新到舊（False）排序！這能保證 2026年9月新賽事絕對永遠排在最前面！
-            # 如果是同一天（如海外和本地），再以季度場次純數字降序排，達成100%完美的實戰時間軸！
+            # 💡 基石代碼之高智慧雙重實質時間降序排序 (最新在最前)
             try:
                 horse_all['temp_idx'] = pd.to_numeric(horse_all['季度場次'], errors='coerce').fillna(0)
                 horse_all = horse_all.sort_values(by=['r_dt', 'temp_idx'], ascending=[False, False])
             except:
                 horse_all = horse_all.sort_values(by='r_dt', ascending=False)
 
-            horse_top3 = top_3_df[top_3_df['馬名'] == horse]
+            if horse_all.empty: continue
             
-            latest_row = horse_all.iloc[0] # 排序後第 0 行必然是新馬季最真實的最新賽績
+            # 💡 聽話修正：100% 沿用您最安全的原生 iloc[0] 提取語法，絕不報錯
+            latest_row = horse_all.iloc[0]
             if pd.isna(latest_row['評分_數字']): continue
             latest_rating = int(latest_row['評分_數字'])
-            horse_age = int(latest_row['當前年齡']) if not pd.isna(latest_row['當前年齡']) else 5
-
-                        # 精確擷取最頂部最新的 3 場歷史數據做 Debug 實時列印
-            recent_3 = horse_all.head(3)
-            max_rate = int(horse_top3['評分_數字'].max()) if not horse_top3.empty else 0
-            min_rate = int(horse_top3['評分_數字'].min()) if not horse_top3.empty else 0
             
-            has_rating_near_high = any(r >= (max_rate - 2) for r in recent_3['評分_數字'].tolist()) if max_rate > 0 else False
+            try: horse_age_int = int(latest_row['當前年齡_num'])
+            except: horse_age_int = 5
+            
+            trainer_clean = str(latest_row['練馬師']).strip() if latest_row['練馬師'] else "未知"
+
+            # 精確擷取最頂部最新的 3 場歷史數據
+            recent_3 = horse_all.head(3)
             has_top3_recently = any(p <= 3 for p in recent_3['名次_數字'].tolist() if p is not None)
 
-            # 🛠️ 🎯 【工程師 Debug 主控台】：在本地 Localhost 後台輸出精確時間軸
+            # -------------------------------------------------
+            # 🗄️ 全新四階新版本狀態初始化與推算 (完美融合)
+            # -------------------------------------------------
+            v2_health = "🟢 健康無礙"
+            v2_ability = "常規參賽馬"
+            v2_new_horse = "查有歷史數據"
+            v2_other_status = "常規戰力狀態"
+
+            latest_top3_dt = None
+            latest_injury_dt = None
+            is_new_horse_real = True
+            has_top3_last_season = False
+            min_rate, max_rate = 0, 0
+            gold_range_str = "暫無上名評分"
+
+            horse_top3 = top_3_df[top_3_df['馬名'] == horse]
+            
+            if not horse_top3.empty:
+                is_new_horse_real = False
+                v2_new_horse = "🟢 查有賽績"
+                min_rate = int(horse_top3['評分_數字'].min())
+                max_rate = int(horse_top3['評分_數字'].max())
+                gold_range_str = f"{min_rate} - {max_rate} 分"
+                
+                top3_races = horse_all[horse_all['名次_數字'] <= 3]
+                if not top3_races.empty:
+                    latest_top3_dt = top3_races['r_dt'].max()
+
+                # 利用純日期精確推算 25/26 馬季（上季）實績
+                cond_25 = (horse_all['r_dt'].dt.year == 2025) & (horse_all['r_dt'].dt.month >= 9)
+                cond_26 = (horse_all['r_dt'].dt.year == 2026) & (horse_all['r_dt'].dt.month <= 7)
+                last_season_races = horse_all[cond_25 | cond_26]
+                
+                if not last_season_races.empty:
+                    last_season_top3 = last_season_races[last_season_races['名次_數字'] <= 3]
+                    if not last_season_top3.empty:
+                        has_top3_last_season = True
+
+            # 💡 【全新防線 1：健康狀況判定與上名平反機制】
+            if not df_injuries.empty and '馬名' in df_injuries.columns:
+                horse_injuries = df_injuries[df_injuries['馬名'] == horse].copy()
+                if not horse_injuries.empty:
+                    horse_injuries['dt'] = pd.to_datetime(
+                        horse_injuries['傷患日期'], errors='coerce', dayfirst=True
+                    )
+                    for _, inj_row in horse_injuries.iterrows():
+                        detail_text = str(inj_row.get('詳情', ''))
+                        if any(kw in detail_text for kw in real_injury_keywords) \
+                           and not any(ekw in detail_text for ekw in exclusion_keywords):
+                            
+                            if pd.notna(inj_row['dt']):
+                                if latest_injury_dt is None or inj_row['dt'] > latest_injury_dt:
+                                    latest_injury_dt = inj_row['dt']
+
+            if latest_injury_dt is not None:
+                if latest_top3_dt is not None and latest_top3_dt > latest_injury_dt:
+                    v2_health = "🟢 健康無礙"
+                else:
+                    v2_health = "🚨 嚴重生理傷患馬"
+
+            # 💡 【全新防線 2：沒能力馬 / 退化期判定】
+            if not is_new_horse_real and not has_top3_last_season:
+                if horse_age_int >= 6: v2_ability = "🚫 退化期老馬"
+                else: v2_ability = "🚫 沒有能力馬"
+
+            # 💡 【全新防線 3：插班 / 新馬馬房判定】
+            if is_new_horse_real:
+                if trainer_clean in black_trainers: v2_new_horse = "🚫 未操完馬房"
+                else: v2_new_horse = "🆕 新馬/插班馬"
+
+            # 💡 【全新防線 4：其他上季曾上名馬 5分有利水位阻力比對】
+            if not is_new_horse_real and has_top3_last_season:
+                if horse_age_int <= 5:
+                    v2_other_status = "🌱 成長期"
+                else:
+                    if latest_rating > 0 and max_rate > 0:
+                        if abs(latest_rating - max_rate) <= 5:
+                            v2_other_status = "📈 平穩向上"
+                        else:
+                            v2_other_status = "📉 飽和調整期"
+
+            # 🛠️ 🎯 【工程師 Debug 控制台】：完全聽話輸出 3 場歷史名次
             if horse in ["快活英雄"]:
                 print("\n" + "⚙️  "*12 + f"【 {horse} ．近 3 場名次追蹤日誌 】" + " ⚙️ "*12)
                 idx = 1
@@ -167,81 +257,45 @@ def load_and_analyze_from_sql():
                 print(f"  📊 數據分析判定結果 ➔ 歷史最高上名評分: {max_rate} 分 | 近3場是否有前三名: {has_top3_recently}")
                 print("="*90 + "\n")
 
-            # 傷患比對
-            horse_injuries = df_injuries[df_injuries['馬名'] == horse]
-            has_real_injury = False
-            injury_detail = ""
-
-            if not horse_injuries.empty:
-                for _, injury_row in horse_injuries.iterrows():
-                    detail_text = str(injury_row['詳情'])
-                    contains_injury = any(kw in detail_text for kw in real_injury_keywords)
-                    contains_exclusion = any(kw in detail_text for kw in exclusion_keywords)
-                    
-                    if contains_injury and not contains_exclusion:
-                        has_real_injury = True
-                        injury_detail = detail_text if not injury_detail else injury_detail + " | " + detail_text
-
-            if len(horse_top3) == 0:
-                min_rate, max_rate = 0, 0
-                gold_range_str = "暫無上名評分"
-                best_dist = int(horse_all['途程_米'].value_counts().idxmax()) if not horse_all['途程_米'].dropna().empty else 1200
-                status, badge_color = "💤 新馬/沉寂中", "dark"
-                desc = "此馬於目前上傳的歷史紀錄中尚未有跑入前三名的紀錄，戰力需重新評估。"
-                potential_status = "💤 觀察中"
-                potential_color = "secondary"
-                potential_desc = "新馬或尚未開竅，建議先透過即時排位分頁觀察其試閘表現。"
+            # -------------------------------------------------
+            # 🛡️ 智慧判定轉換為主頁狀態與預警燈號 (漏斗排除)
+            # -------------------------------------------------
+            if "🚨" in v2_health:
+                status, badge_color = "💥 傷患排除", "danger"
+                desc = "❌ 排除防線(一)：查出該駒患有未復原之嚴重生理歷史傷患。"
+            elif "🚫" in v2_ability:
+                status, badge_color = f"💥 {v2_ability}", "danger"
+                desc = f"❌ 排除防線(二)：上季出賽完全無上名，狀態已大幅退化。"
+            elif "🚫" in v2_new_horse:
+                status, badge_color = "💥 未操完馬房", "danger"
+                desc = f"❌ 排除防線(三)：新馬/插班馬，且落在冷門黑名單馬房【{trainer_clean}】。"
+            elif max_rate > 0 and latest_rating > (max_rate + 2) and v2_other_status not in ["🌱 成長期", "📈 平穩向上"]:
+                status, badge_color = "❌ 評分過高", "danger"
+                desc = f"❌ 排除防線(四)：當前({latest_rating}分)超出最高勝出天花板，阻力過大。"
             else:
-                min_rate = int(horse_top3['評分_數字'].min())
-                max_rate = int(horse_top3['評分_數字'].max())
-                gold_range_str = f"{min_rate} - {max_rate} 分"
-                best_dist = int(horse_top3['途程_米'].value_counts().idxmax())
-                
-                # 💡 ✨ 核心升級：排序後雷打不動直接取前 3 筆 (即真正物理時間最新近的 3 場)
-                # 快活英雄最頂部的三場真實賽事(9著、5著、10著)將會被死死鎖定、無所遁形！
-                recent_3 = horse_all.head(3)
-                
-                has_rating_near_high = any(r >= (max_rate - 2) for r in recent_3['評分_數字'].tolist())
-                has_top3_recently = any(p <= 3 for p in recent_3['名次_數字'].tolist() if p is not None)
-
-
-                if has_real_injury:
-                    potential_status, potential_color = "🩹 傷患隱憂 (謹慎觀望)", "dark"
-                    potential_desc = f"⚠️ 歷史獸醫紀錄顯示曾患有【{injury_detail}】！老傷極易復發，建議防守觀望。"
-                elif has_top3_recently or latest_rating >= max_rate:
-                    potential_status, potential_color = "📈 平穩向上 (火氣正盛)", "info"
-                    potential_desc = f"({horse_age}歲) 近績強勢突圍！最新 3 場正賽頻頻衝入前三名，戰力處於巔峰平穩期。"
-                elif has_rating_near_high:
-                    if horse_age <= 5:
-                        potential_status, potential_color = "🌱 成長中 (戰力再突破)", "success"
-                        potential_desc = f"({horse_age}歲) 年輕進步馬！近況大勇且逼近最高評分，上升空間極大。"
-                    else:
-                        potential_status, potential_color = "📈 平穩向上 (老當益壯)", "info"
-                        potential_desc = f"({horse_age}歲) 熟齡火氣仍盛！維持高位評分，體態精壯。"
+                if "📈" in v2_other_status:
+                    status, badge_color = "🟢 平穩向上", "success"
+                    desc = f"✨ 阻力有利：現時評分與歷史勝出頂峰在 5分 水位內，火氣仍盛。"
+                elif "🌱" in v2_other_status:
+                    status, badge_color = "🌱 成長期", "success"
+                    desc = f"✨ 進步神速：({horse_age_int}歲)年輕上季有上名主力主力駒，空間大。"
                 else:
-                    potential_status, potential_color = "📉 評分飽和 / 退化期", "secondary"
-                    potential_desc = "高齡馬且近況未能挑戰高位，戰力已呈飽和，宜觀望減分落班。"
+                    status, badge_color = "⚠️ 進入射程", "warning"
+                    desc = f"當前評分 ({latest_rating}分) 落在黃金區間，列入防守留底觀察。"
 
-                if potential_status == "📈 平穩向上 (火氣正盛)":
-                    status, badge_color = "🟢 平穩向上 (安全通過)", "success"
-                    desc = f"該馬最近3場正賽獲取前三名，火氣極旺，雖目前({latest_rating}分)高於過往，但正處於突破期！"
-                elif latest_rating <= (max_rate + 2) and latest_rating >= (min_rate - 2):
-                    status, badge_color = "⚠️ 進入射程範圍", "warning"
-                    desc = f"當前評分 ({latest_rating}分) 已接近黃金上名區域，隨時會爆冷反彈！"
-                elif latest_rating > max_rate:
-                    status, badge_color = "❌ 評分過高", "danger"
-                    desc = f"當前評分 ({latest_rating}分) 超出過往勝出高位（{max_rate}分），阻力過大。"
-                else:
-                    status, badge_color = "📉 跌穿底線", "secondary"
-                    desc = f"評分已低於過往新低，需留意馬匹是否有退化跡象。"
+            if "🚫" in v2_ability: label_text = v2_ability
+            elif "🚫" in v2_new_horse: label_text = "❌ 未操完馬房"
+            elif "🚨" in v2_health: label_text = "🩹 嚴重傷患"
+            else: label_text = v2_other_status
 
             results.append({
-                'name': horse, 'age': horse_age, 'total': len(horse_all), 'top3': len(horse_top3),
-                'range': gold_range_str, 'dist': f"{best_dist}米",
+                'name': horse, 'age': horse_age_int, 'total': len(horse_all), 'top3': len(horse_top3),
+                'range': gold_range_str,
+                'dist': f"{int(horse_all['途程_米'].value_counts().idxmax()) if not horse_all['途程_米'].dropna().empty else 1200}米",
                 'current': latest_rating, 'status': status, 'color': badge_color, 'desc': desc,
-                'potential': potential_status, 'potential_color': potential_color, 'potential_desc': potential_desc,
-                'injury': "🚨 曾受傷患困擾" if has_real_injury else "🟢 健康無礙",
-                'injury_alert': has_real_injury, 'injury_text': injury_detail
+                'potential': label_text, 'potential_color': "success" if "🟢" in status or "🌱" in status or "📈" in status else "danger" if "💥" in status or "❌" in status else "warning",
+                'potential_desc': desc, 'injury': "🚨 有傷患紀錄" if "🚨" in v2_health else "🟢 健康無礙",
+                'injury_alert': True if "🚨" in v2_health else False, 'injury_text': ""
             })
         return results, None
     except Exception as e:
@@ -314,375 +368,206 @@ def hkjc_live():
     # 如果是直接點擊連結，給予預設值開鑼日
     return redirect(url_for('view_race', race_date_str="2026-09-06", venue_code="ST", race_no=1))
     
+    
 @app.route('/hkjc_live/<race_date_str>/<venue_code>/<int:race_no>')
 def view_race(race_date_str, venue_code, race_no):
-    """🌐 萬能動態排位解碼引擎：第一部分（格式完全對齊空白鍵）"""
-    target_date = race_date_str.replace('-', '/')
-    url = f"https://racing.hkjc.com/zh-hk/local/information/racecard?racedate={target_date}&Racecourse={venue_code}&RaceNo={race_no}"
+    """🌐 萬能排位解碼引擎：極度壓縮窄版（徹底拯救下方與右側邊界）"""
+    t_dt = race_date_str.replace('-', '/')
+    url = f"https://racing.hkjc.com/zh-hk/local/information/racecard?racedate={t_dt}&Racecourse={venue_code}&RaceNo={race_no}"
+    hdrs = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    race_horses, dan_nums, not_adv_dan_nums = [], [], []
+    race_details = {'title': f"第 {race_no} 場 賽事排位", 'datetime': f"{t_dt} 指定賽期", 'track': f"{'沙田' if venue_code=='ST' else '跑馬地'}馬場 | 草地", 'class_prize': "數據加載中..."}
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
-    
-    race_horses = []
-    recommend_numbers = []
-    recommend_str = "暫無符合條件之精選馬匹"
-    
-    race_details = {
-        'title': f"第 {race_no} 場 賽事排位", 
-        'datetime': f"{target_date} 人手指定賽期",
-        'track': f"{'沙田馬場' if venue_code == 'ST' else '跑馬地馬場'} | 草地", 
-        'class_prize': "數據加載中..."
-    }
+    # 預設場次兜底陣列
+    total_races = list(range(1, 11))
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.encoding = 'utf-8'
-        
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
+        resp = requests.get(url, headers=hdrs, timeout=10)
+        if resp.status_code == 200:
+            resp.encoding = 'utf-8'
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            pure_txt = "".join(soup.text.split())
             
-            global_pure_text = "".join(soup.text.split())
-            track_match = re.search(r'(草地,.*?\d+米|草地.*?賽道\d+米|\d+米)', " ".join(soup.text.split()))
-            if track_match: 
-                race_details['track'] = track_match.group(1).strip()
+            # =========================================================
+            # 🛠️ 核心升級：動態從馬會網頁網頁原始碼中，100% 自動抓取今日實際開賽總場數！
+            # =========================================================
+            temp_races = []
+            # 尋找馬會上方第1場、第2場的導覽列超連結特徵
+            for a_tag in soup.find_all('a', href=True):
+                if 'RaceNo=' in a_tag['href'] or 'race_no=' in a_tag['href'].lower():
+                    r_match = re.search(r'RaceNo=(\d+)', a_tag['href'], re.IGNORECASE)
+                    if r_match:
+                        r_num = int(r_match.group(1))
+                        if r_num not in temp_races and r_num <= 12:
+                            temp_races.append(r_num)
             
-            class_match = re.search(r'(第[\u4e00-\u9fa5一二三四五六]班)', global_pure_text)
-            if class_match:
-                prize_match = re.search(r'(獎金:\$\d+,\d+,\d+|獎金:\$\d+,\d+)', global_pure_text)
-                prize_str = prize_match.group(1) + " | " if prize_match else ""
-                race_details['class_prize'] = f"{prize_str}{class_match.group(1)}"
+            if temp_races:
+                found_race_nos = sorted(temp_races)
+            else:
+                # 兜底二：從畫面的純文字數字列表中分析
+                txt_races = [int(x) for x in re.findall(r'第(\d+)場', soup.text) if int(x) <= 12]
+                if txt_races: found_race_nos = sorted(list(set(txt_races)))
 
-            title_match = re.search(r'(第\d+場-[\u4e00-\u9fa5]+讓賽)', global_pure_text)
-            if title_match: 
-                race_details['title'] = title_match.group(1)
+            # =========================================================
+            # 🎯 閣下要求的 Debug 偵錯直印功能（在 VS 下方黑視窗 printf 印出真實場次清單）
+            # =========================================================
+            print("\n" + "⚙️  "*15 + "【後台動態場次 Debug 生態回報】" + " ⚙️ "*15)
+            print(f"🏟️ 當前分析場地：{venue_code} | 日期：{t_dt}")
+            print(f"📊 馬會網頁實際偵測到的今日總開賽場次清單 (found_race_nos) ➔ {found_race_nos}")
+            print(f"🏁 今日最高賽事關卡數 ➔ 第 {max(found_race_nos)} 場")
+            print("="*85 + "\n")
 
-            # 連接本地 SQLite 雙表進行交叉大數據比對
+            t_m = re.search(r'(草地,.*?\d+米|草地.*?賽道\d+米|\d+米)', " ".join(soup.text.split()))
+            if t_m: race_details['track'] = t_m.group(1).strip()
+            c_m = re.search(r'(第[\u4e00-\u9fa5一二三四五六]班)', pure_txt)
+            if c_m:
+                p_m = re.search(r'(獎金:\$\d+,\d+,\d+|獎金:\$\d+,\d+)', pure_txt)
+                race_details['class_prize'] = f"{p_m.group(1) + ' | ' if p_m else ''}{c_m.group(1)}"
+            if re.search(r'(第\d+場-[\u4e00-\u9fa5]+讓賽)', pure_txt): race_details['title'] = re.search(r'(第\d+場-[\u4e00-\u9fa5]+讓賽)', pure_txt).group(1)
+
             conn = sqlite3.connect(DB_FILE)
-            db_records = pd.read_sql_query("SELECT * FROM racing_records", conn)
-            db_injuries = pd.read_sql_query("SELECT * FROM injury_records", conn)
+            db_rec, db_inj = pd.read_sql_query("SELECT * FROM racing_records", conn), pd.read_sql_query("SELECT * FROM injury_records", conn)
             conn.close()
-            # 3. 解析排位表格數據並執行智能篩選 (雙重時間軸排序版 A)
-            table = soup.find('table', id='racecardlist') or \
-                    soup.find('table', class_='table_bd')
-            if table:
-                rows = table.find_all('tr')
-                idx_map = {'num': 0, 'history': 1, 'name': 3, 'weight': 5, 
-                           'jockey': 6, 'draw': 7, 'trainer': 8, 'rating': 9}
-                
-                header_tr = table.find('tr', class_='table_header') or \
-                            table.find('tr')
-                if header_tr:
-                    th_list = header_tr.find_all(['th', 'td'])
-                    for i, th in enumerate(th_list):
-                        th_text = th.text.strip()
-                        if '馬匹編號' in th_text or '馬號' in th_text: 
-                            idx_map['num'] = i
-                        elif '近績' in th_text: idx_map['history'] = i
-                        elif '馬名' in th_text: idx_map['name'] = i
-                        elif '負磅' in th_text: idx_map['weight'] = i
-                        elif '騎師' in th_text: idx_map['jockey'] = i
-                        elif '檔位' in th_text: idx_map['draw'] = i
-                        elif '練馬師' in th_text: idx_map['trainer'] = i
-                        elif '評分' in th_text: idx_map['rating'] = i
 
-                real_injury_keywords = ['心律', '流血', '不良於行', '受傷', 
-                                       '手術', '肌腱', '筋腱', '懸韌帶', 
-                                       '韌帶', '骨', '關節', '碎骨', 
-                                       '呼吸道', '喘鳴症', '流鼻血']
-                exclusion_keywords = ['表現欠佳', '令人失望', '難以接受', 
-                                      '八歲或以上', '食慾不振', '發燒', 
-                                      '閹割', '煩躁', '被卡住']
-                
-                black_trainers = ["丁冠豪", "大衛希斯", "葉楚航", 
-                                  "鄭俊偉", "徐雨石"]
+            table = soup.find('table', id='racecardlist') or soup.find('table', class_='table_bd')
+            if table and table.find('tr'):
+                rows = table.find_all('tr')
+                idx = {'num': 0, 'hist': 1, 'name': 3, 'wt': 5, 'jky': 6, 'drw': 7, 'trn': 8, 'rtg': 9}
+                th_l = [th.text.strip() for th in (table.find('tr', class_='table_header') or table.find('tr')).find_all(['th', 'td'])]
+                for i, txt in enumerate(th_l):
+                    if '馬匹編號' in txt or '馬號' in txt: idx['num'] = i
+                    elif '近績' in txt: idx['hist'] = i
+                    elif '馬名' in txt: idx['name'] = i
+                    elif '負磅' in txt: idx['wt'] = i
+                    elif '騎師' in txt: idx['jky'] = i
+                    elif '檔位' in txt: idx['drw'] = i
+                    elif '練馬師' in txt: idx['trn'] = i
+                    elif '評分' in txt: idx['rtg'] = i
 
                 for row in rows:
-                    if row.find('th') or \
-                       'table_header' in str(row.get('class', '')) or \
-                       'hidden' in str(row.get('class', '')):
-                        continue
-                    
+                    if row.find('th') or any(k in str(row.get('class', '')) for k in ['header', 'hidden']): continue
                     cols = row.find_all('td')
                     if len(cols) >= 10:
                         try:
-                            num_text = cols[idx_map['num']].text.strip()
-                            num_match = re.search(r'\d+', num_text)
-                            if not num_match: continue
-                            num = num_match.group(0)
+                            num = re.search(r'\d+', cols[idx['num']].text.strip()).group(0)
+                            raw_n = " ".join(cols[idx['name']].text.split()).strip()
                             
-                            history = " ".join(cols[idx_map['history']]
-                                      .text.split()).strip()
-                            raw_name = " ".join(cols[idx_map['name']]
-                                       .text.split()).strip()
-                            name_match = re.search(
-                                r'([\u4e00-\u9fa5]+)\s*\(([A-Z0-9]+)\)', 
-                                raw_name
-                            )
+                            nm_match = re.search(r'([\u4e00-\u9fa5]+)\s*\(([A-Z0-9]+)\)', raw_n)
+                            p_name = nm_match.group(1).strip() if nm_match else raw_n.strip()
+                            horse_display = f"{nm_match.group(1)} [{nm_match.group(2)}]" if nm_match else raw_n
+
+                            j_cln = " ".join(cols[idx['jky']].text.split()).strip().replace('\n', '')
+                            if "綵衣" in raw_n or "負磅" in j_cln: continue
+
+                            drw = "".join(filter(str.isdigit, cols[idx['drw']].text.strip()))
+                            if not drw and idx['drw'] + 1 < len(cols): drw = "".join(filter(str.isdigit, cols[idx['drw'] + 1].text.strip()))
+                            t_cln = "".join(re.findall(r'[\u4e00-\u9fa5]+', cols[idx['trn'] + 1 if idx['trn'] + 1 < len(cols) else idx['trn']].text.strip())).replace("檔", "")
                             
-                            pure_horse_name = name_match.group(1) \
-                                              if name_match else raw_name
-                            horse_name_display = f"{name_match.group(1)} " \
-                                                 f"[{name_match.group(2)}]" \
-                                                 if name_match else raw_name
-
-                            weight_digit = "".join(filter(str.isdigit, 
-                                           cols[idx_map['weight']]
-                                           .text.strip()))
-                            jockey_clean = " ".join(cols[idx_map['jockey']]
-                                           .text.split()).strip() \
-                                           .replace('\n', '')
-
-                            if "綵衣" in horse_name_display or \
-                               "負磅" in jockey_clean or \
-                               "騎師" in jockey_clean: 
-                                continue
-
-                            raw_draw = cols[idx_map['draw']].text.strip()
-                            draw_digit = "".join(filter(str.isdigit, 
-                                         raw_draw))
-                            if not draw_digit and \
-                               idx_map['draw'] + 1 < len(cols):
-                                draw_digit = "".join(filter(str.isdigit, 
-                                             cols[idx_map['draw'] + 1]
-                                             .text.strip()))
-
-                            trainer_idx = idx_map['trainer'] + 1 \
-                                          if idx_map['trainer'] + 1 < len(cols) \
-                                          else idx_map['trainer']
-                            raw_trainer = " ".join(cols[trainer_idx]
-                                          .text.split()).strip()
-                            trainer_clean = "".join(re.findall(
-                                            r'[\u4e00-\u9fa5]+', 
-                                            raw_trainer.replace('\n', ''))
-                                            ).replace("檔", "")
-
-                            rating_digit = "-"
+                            # 🔄 沿用傳統遍歷，拔除 > 40 分限制，只要是純數字格子一律立刻放行載入！
+                            rtg_d = "-"
+                            cell_index = 0
                             for cell in cols:
-                                cell_class = str(cell.get('class', '')).lower()
-                                if 'rating' in cell_class and \
-                                   cell.text.strip().isdigit():
-                                    rating_digit = cell.text.strip()
-                                    break
-                            if rating_digit == "-":
-                                for idx_check in range(idx_map['trainer'], 
-                                                       len(cols)):
-                                    t_val = cols[idx_check].text.strip()
-                                    if t_val.isdigit() and t_val != num \
-                                       and t_val != draw_digit:
-                                        if int(t_val) != 1 or \
-                                           idx_check == idx_map['rating'] or \
-                                           idx_check == idx_map['rating'] + 1:
-                                            rating_digit = t_val
-                                            break
+                                if cell_index > idx['trn'] and cell_index <= idx['rtg'] + 2:
+                                    txt_val = cell.text.strip()
+                                    # 排除馬號與檔位干擾，只要是數字，就判定為真實隱藏評分
+                                    if txt_val.isdigit() and int(txt_val) != int(num) and txt_val != drw:
+                                        rtg_d = txt_val
+                                        break
+                                cell_index += 1
 
-                            # 排除法核心變數初始化
-                            is_excluded = False
-                            exclusion_reason = ""
-                            min_rate = 0
-                            max_rate = 0
-                            potential_status = "無本地賽績數據"
-                            has_real_injury = False
-                            is_new_horse = True
-                            
-                            latest_top3_dt = None
-                            latest_injury_dt = None
+                            if rtg_d == "-" and (idx['rtg'] + 1) < len(cols):
+                                r_match = re.search(r'\d+', cols[idx['rtg'] + 1].text.strip())
+                                if r_match: rtg_d = r_match.group(0)
 
-                            if not db_records.empty:
-                                horse_history_races = db_records[
-                                    db_records['馬名'] == pure_horse_name
-                                ].copy()
-                                if not horse_history_races.empty:
-                                    is_new_horse = False 
-                                    def clean_p(x):
-                                        try: return int(str(x).strip())
-                                        except: return 99
-                                    horse_history_races['名次_數'] = \
-                                        horse_history_races['名次'] \
-                                        .apply(clean_p)
-                                    
-                                    # 💡 ✨ 終極同步：排位頁面也強制轉換為安全時間戳記物件
-                                    horse_history_races['r_dt'] = pd.to_datetime(
-                                        horse_history_races['日期'], errors='coerce', dayfirst=True
-                                    )
-                                    backup_dt = pd.to_datetime(horse_history_races['日期'], format='%d/%m/%Y', errors='coerce', dayfirst=True)
-                                    horse_history_races['r_dt'] = horse_history_races['r_dt'].fillna(backup_dt)
+                            curr_rate = int(rtg_d) if rtg_d.isdigit() else 0
 
-                                    # 💡 ✨ 終極同步：雙重時間降序排序（r_dt日期第一優先、場次第二優先）
-                                    try:
-                                        horse_history_races['temp_idx'] = pd.to_numeric(horse_history_races['季度場次'], errors='coerce').fillna(0)
-                                        horse_history_races = horse_history_races.sort_values(by=['r_dt', 'temp_idx'], ascending=[False, False])
-                                    except:
-                                        horse_history_races = horse_history_races.sort_values(by='r_dt', ascending=False)
+                            is_ex, rsn_txt, min_r, max_r, is_not_adv = calc_funnel(p_name, curr_rate, t_cln, db_rec, db_inj)
 
-                                    top3_history = horse_history_races[
-                                        horse_history_races['名次_數'] <= 3
-                                    ].copy()
-                                    
-                                    if not top3_history.empty:
-                                        min_rate = int(pd.to_numeric(
-                                            top3_history['評分'], 
-                                            errors='coerce').min())
-                                        max_rate = int(pd.to_numeric(
-                                            top3_history['評分'], 
-                                            errors='coerce').max())
-                                        
-                                        valid_top3 = top3_history.dropna(subset=['r_dt'])
-                                        if not valid_top3.empty:
-                                            latest_top3_dt = valid_top3['r_dt'].max()
-                                    
-                                    # 💡 ✨ 終極同步：降序排序後直接取最前面的 3 筆紀錄 (.head(3))
-                                    recent_3 = horse_history_races.head(3)
-                                    
-                                    has_rating_near_high = any(
-                                        pd.to_numeric(r['評分'], errors='coerce') >= (max_rate - 2) 
-                                        for _, r in recent_3.iterrows()
-                                    ) if max_rate > 0 else False
-                                    
-                                    has_top3_recently = any(
-                                        clean_p(r['名次']) <= 3 
-                                        for _, r in recent_3.iterrows()
-                                    )
-                                    
-                                    if has_top3_recently or \
-                                       (rating_digit.isdigit() and int(rating_digit) >= max_rate):
-                                        potential_status = "📈 平穩向上"
-                                    else:
-                                        potential_status = "📉 飽和調整期"
+                            if not is_ex:
+                                dan_nums.append(str(num))
+                                if is_not_adv: not_adv_dan_nums.append(str(num))
 
-                            if is_new_horse and not db_injuries.empty:
-                                if not db_injuries[db_injuries['馬名'] == \
-                                   pure_horse_name].empty:
-                                    is_new_horse = False
-
-                            if not db_injuries.empty:
-                                horse_injuries = db_injuries[
-                                    db_injuries['馬名'] == pure_horse_name
-                                ].copy()
-                                if not horse_injuries.empty:
-                                    horse_injuries['dt'] = pd.to_datetime(
-                                        horse_injuries['傷患日期'], 
-                                        errors='coerce', dayfirst=True
-                                    )
-                                    for _, inj_row in horse_injuries.iterrows():
-                                        detail_text = str(inj_row['詳情'])
-                                        if any(kw in detail_text 
-                                               for kw in real_injury_keywords) \
-                                           and not any(ekw in detail_text 
-                                               for ekw in exclusion_keywords):
-                                            
-                                            has_real_injury = True
-                                            if pd.notna(inj_row['dt']):
-                                                if latest_injury_dt is None or \
-                                                   inj_row['dt'] > latest_injury_dt:
-                                                    latest_injury_dt = inj_row['dt']
-
-                            if has_real_injury and latest_top3_dt is not None \
-                               and latest_injury_dt is not None:
-                                if latest_top3_dt > latest_injury_dt:
-                                    has_real_injury = False 
-
-                            # -------------------------------------------------
-                            # 🛡️ 智能四重篩選排除防線判定
-                            # -------------------------------------------------
-                            if has_real_injury:
-                                is_excluded = True
-                                exclusion_reason = "❌ 排除：本地庫查出有嚴重生理傷患紀錄！"
-                            elif rating_digit.isdigit() and max_rate > 0:
-                                current_rating_val = int(rating_digit)
-                                if current_rating_val > (max_rate + 2) and \
-                                   potential_status not in ["🌱 成長中", "📈 平穩向上"]:
-                                    is_excluded = True
-                                    exclusion_reason = f"❌ 排除：現時評分" \
-                                        f"({current_rating_val}分)高過黃金頂峰" \
-                                        f"({max_rate}分)阻力過大。"
-                            elif is_new_horse and \
-                                 trainer_clean in black_trainers:
-                                is_excluded = True
-                                exclusion_reason = f"❌ 排除：此馬為" \
-                                    f"[🆕新馬/插班馬]，且所屬馬房" \
-                                    f"【{trainer_clean}】已列入冷門名單。"
-
-
-                            # 4. 實裝純日期推算馬季防線
-
-
-                            # 💡 ✨ 核心升級：利用【日期欄位】完美推算 25/26 馬季出賽，徹底擺脫對季度欄位的依賴
-                            if not is_excluded and not is_new_horse and not horse_history_races.empty:
-                                try:
-                                    # 先將歷史賽績中的「日期」統一轉換為時間物件
-                                    horse_history_races['r_dt'] = pd.to_datetime(
-                                        horse_history_races['日期'], errors='coerce', dayfirst=True
-                                    )
-                                    
-                                    # 篩選 25/26 馬季的比賽條件：
-                                    # 條件一：2025年 9月至12月
-                                    cond_2025 = (horse_history_races['r_dt'].dt.year == 2025) & (horse_history_races['r_dt'].dt.month >= 9)
-                                    # 條件二：2026年 1月至7月
-                                    cond_2026 = (horse_history_races['r_dt'].dt.year == 2026) & (horse_history_races['r_dt'].dt.month <= 7)
-                                    
-                                    # 執行精確馬季過濾
-                                    season_races = horse_history_races[cond_2025 | cond_2026]
-                                    
-                                    if len(season_races) > 5:
-                                        season_top3 = season_races[season_races['名次_數'] <= 3]
-                                        if len(season_top3) == 0:
-                                            age_val = season_races.iloc[-1].get('當前年齡', 5)
-                                            try: horse_age_int = int(float(str(age_val).strip()))
-                                            except: horse_age_int = 5
-                                            
-                                            is_excluded = True
-                                            if horse_age_int >= 6:
-                                                exclusion_reason = f"❌ 排除：25/26季出賽{len(season_races)}場未曾上名，且({horse_age_int}歲)退化老馬。"
-                                            else:
-                                                exclusion_reason = f"❌ 排除：25/26季出賽{len(season_races)}場未曾上名，且({horse_age_int}歲)能力不足。"
-                                except: pass
-
-                            if not is_excluded:
-                                recommend_numbers.append(num)
-
-                            if min_rate > 0:
-                                gold_label = f"{min_rate}-{max_rate}分"
-                            elif is_new_horse:
-                                gold_label = "🆕 新馬/插班馬"
-                            else:
-                                gold_label = "📉 查有賽績/未曾上名"
-
+                            g_label = f"{min_r}-{max_r}分" if max_r > 0 else "🆕新馬/插班馬"
+                            ui_status = "✨ 通過推介" if not (is_ex or is_not_adv) else rsn_txt
 
                             race_horses.append({
-                                'num': num, 'history': history, 
-                                'name': horse_name_display,
-                                'weight': weight_digit + " 磅" \
-                                          if weight_digit else "134 磅",
-                                'jockey': jockey_clean, 'draw': draw_digit \
-                                          + " 檔" if draw_digit else "-",
-                                'trainer': trainer_clean, 
-                                'rating': rating_digit,
-                                'is_excluded': is_excluded, 
-                                'exclusion_reason': exclusion_reason,
-                                'gold_range': gold_label
+                                'num': num, 'history': " ".join(cols[idx['hist']].text.split()).strip(), 'name': horse_display,
+                                'weight': "".join(filter(str.isdigit, cols[idx['wt']].text.strip())) + " 磅", 'jockey': j_cln, 'draw': drw + " 檔" if drw else "-",
+                                'trainer': t_cln, 'rating': rtg_d, 'is_excluded': is_ex, 'exclusion_reason': ui_status, 'gold_range': g_label
                             })
-                        except Exception: continue
-                
-                if recommend_numbers:
-                    recommend_str = ", ".join(sorted(recommend_numbers, 
-                                              key=int))
-                            
-    except Exception as e:
-        race_details['title'] = f"⚠️ 連線失敗: {str(e)}"
+                        except: continue
 
-    print("\n" + "✍️  "*15 + "【人手輸入指令控制台】" + " ✍️ "*15)
-    print(f"📅 閣下指令日子：{target_date}")
-    print(f"🏟️ 閣下指令馬場：{venue_code} (ST=沙田, HV=跑馬地)")
-    print(f"🏁 當前載入顯示：第 {race_no} 場賽事完整排位陣容")
-    print(f"🌟 本場精選推薦：{recommend_str}")
-    print("="*80 + "\n")
+                dan_nums_sorted = sorted(dan_nums, key=int)
+                not_adv_sorted = sorted(not_adv_dan_nums, key=int)
 
-    return render_template('hkjc_live.html', 
-                           race_horses=race_horses, 
-                           current_race=race_no, 
-                           race_details=race_details, 
-                           race_date_str=race_date_str,
-                           venue_code=venue_code,
-                           recommend_str=recommend_str, 
-                           races=list(range(1, 11)))
+    except Exception as e: race_details['title'] = f"⚠️ 連線失敗: {str(e)}"
+
+    return render_template('hkjc_live.html', race_horses=race_horses, current_race=race_no, race_details=race_details,
+                           race_date_str=race_date_str, venue_code=venue_code, 
+                           dan_nums_json=dan_nums_sorted if 'dan_nums_sorted' in locals() else [], 
+                           not_adv_json=not_adv_sorted if 'not_adv_sorted' in locals() else [], races=found_race_nos)
+def calc_funnel(name, rate, trn, db_r, db_i):
+    """🧠 核心大腦：完全對齊天花板「硬排除」與評分過低「不建議馬膽」之漏斗分流版"""
+    ex, rsn, min_r, max_r = False, "", 0, 0
+    bt = ["丁冠豪", "大衛希斯", "葉楚航", "鄭俊偉", "徐雨石"]
+    ik = ['心律', '流血', '不良於行', '受傷', '手術', '肌腱', '筋腱', '懸韌帶', '韌帶', '骨', '關節', '碎骨', '呼吸道', '喘鳴症', '流鼻血']
+    ek = ['表現欠佳', '令人失望', '難以接受', '八歲或以上', '食慾不振', '發燒', '閹割', '煩躁', '被卡住']
+    v2_h, v2_a, v2_n, v2_o, age, l_t3, l_inj, is_new, has_t3 = "🟢健康", "常規", "有賽績", "常規", 5, None, None, True, False
+
+    try: curr_rate_int = int(rate)
+    except: curr_rate_int = 0
+
+    search_name = str(name).strip()
+
+    if not db_r.empty:
+        h = db_r[db_r['馬名'] == search_name].copy()
+        if not h.empty:
+            is_new = False
+            h['名_num'] = h['名次'].apply(lambda x: int(str(x).strip()) if str(x).strip().isdigit() else 99)
+            h['dt'] = pd.to_datetime(h['日期'], errors='coerce', dayfirst=True).fillna(pd.to_datetime(h['日期'], format='%d/%m/%Y', errors='coerce', dayfirst=True))
+            try: h = h.sort_values(by=['dt', '季度場次'], ascending=[False, False])
+            except: h = h.sort_values(by='dt', ascending=False)
+            try: age = int(float(str(h.iloc[0].get('當前年齡', 5))))
+            except: age = 5
+            t3 = h[h['名_num'] <= 3]
+            if not t3.empty:
+                min_r = int(pd.to_numeric(t3['評分'], errors='coerce').min())
+                max_r = int(pd.to_numeric(t3['評分'], errors='coerce').max())
+                l_t3 = t3['dt'].max()
+            c25, c26 = (h['dt'].dt.year == 2025) & (h['dt'].dt.month >= 9), (h['dt'].dt.year == 2026) & (h['dt'].dt.month <= 7)
+            if not h[c25 | c26].empty and not h[c25 | c26][h['名_num'] <= 3].empty: has_t3 = True
+
+    if is_new and not db_i.empty and not db_i[db_i['馬名'] == search_name].empty: is_new = False
+    if not db_i.empty:
+        j = db_i[db_i['馬名'] == search_name].copy()
+        if not j.empty:
+            j['dt'] = pd.to_datetime(j['傷患日期'], errors='coerce', dayfirst=True)
+            for _, r in j.iterrows():
+                if any(k in str(r['詳情']) for k in ik) and not any(e in str(r['詳情']) for e in ek):
+                    if pd.notna(r['dt']) and (l_inj is None or r['dt'] > l_inj): l_inj = r['dt']
+
+    if l_inj is not None: v2_h = "🟢健康" if (l_t3 is not None and l_t3 > l_inj) else "🚨嚴重傷患"
+    if not is_new and not has_t3: v2_a = "🚫 退化期老馬" if age >= 6 else "🚫 沒有能力馬"
+    if is_new: v2_n = "🚫 未操完馬房" if trn in bt else "🆕新馬"
+    if not is_new and has_t3:
+        if age <= 5: v2_o = "🌱成長期"
+        else:
+            if curr_rate_int > 0 and max_r > 0: v2_o = "📈平穩向上" if abs(curr_rate_int - max_r) <= 5 else "📉飽和調整期"
+
+    if "🚨" in v2_h: return True, "❌ 排除(防線一)：生理傷患。", min_r, max_r, False
+    if "🚫" in v2_a: return True, f"❌ 排除(防線二)：{v2_a}。", min_r, max_r, False
+    if "🚫" in v2_n: return True, f"❌ 排除(防線三)：馬房未操完。", min_r, max_r, False
+
+    is_not_adv = False
+    if curr_rate_int > max_r and max_r > 0:
+        if v2_o in ["📉飽和調整期", "常規"] or (curr_rate_int > max_r + 2 and v2_o not in ["🌱成長期", "📈平穩向上"]):
+            return True, f"❌ 排除(防線四)：當前評分({curr_rate_int}分)超出最高勝出天花板({max_r}分)阻力過大。", min_r, max_r, False
+
+    if min_r > 0 and curr_rate_int < min_r and v2_o not in ["🌱成長期"]:
+        is_not_adv = True
+        rsn = f"⚠️ 不建議馬膽：低於黃金下限({min_r}分)。"
+
+    return ex, rsn if is_not_adv else "", min_r, max_r, is_not_adv
+
+
+
