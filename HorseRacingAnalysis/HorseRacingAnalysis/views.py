@@ -368,144 +368,163 @@ def hkjc_live():
     # 如果是直接點擊連結，給予預設值開鑼日
     return redirect(url_for('view_race', race_date_str="2026-09-06", venue_code="ST", race_no=1))
     
-    
 @app.route('/hkjc_live/<race_date_str>/<venue_code>/<int:race_no>')
 def view_race(race_date_str, venue_code, race_no):
-    """🌐 萬能排位解碼引擎：極度壓縮窄版（徹底拯救下方與右側邊界）"""
+    """🌐 萬能排位解碼引擎：全能打包抬頭與雙推介列至 JSON 快取完全體"""
+    import json, os
     t_dt = race_date_str.replace('-', '/')
-    url = f"https://racing.hkjc.com/zh-hk/local/information/racecard?racedate={t_dt}&Racecourse={venue_code}&RaceNo={race_no}"
-    hdrs = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    race_horses, dan_nums, not_adv_dan_nums = [], [], []
-    race_details = {'title': f"第 {race_no} 場 賽事排位", 'datetime': f"{t_dt} 指定賽期", 'track': f"{'沙田' if venue_code=='ST' else '跑馬地'}馬場 | 草地", 'class_prize': "數據加載中..."}
-    
-    # 預設場次兜底陣列
-    total_races = list(range(1, 11))
+    cache_file = "hkjc_cache.json"
+    race_horses, dan_nums_sorted, not_adv_sorted = [], [], []
+    found_race_nos = list(range(1, 10))
+    race_details = {'title': f"第 {race_no} 場 賽事排位", 'datetime': f"{t_dt} 指定賽期", 'track': f"{venue_code} 馬場", 'class_prize': "數據加載中..."}
 
-    try:
-        resp = requests.get(url, headers=hdrs, timeout=10)
-        if resp.status_code == 200:
-            resp.encoding = 'utf-8'
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            pure_txt = "".join(soup.text.split())
+    use_cache = False
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f: cache_data = json.load(f)
+            if cache_data.get('race_date') == race_date_str and cache_data.get('venue') == venue_code:
+                found_race_nos = cache_data.get('found_race_nos', found_race_nos)
+                if str(race_no) in cache_data.get('races_data', {}):
+                    c_race = cache_data['races_data'][str(race_no)]
+                    race_horses = c_race['race_horses']
+                    # 🚀 🎯 智慧快取命中：直接從 JSON 裡完美取出上次存好的雙列推介與抬頭資料！
+                    dan_nums_sorted = c_race.get('dan_nums', [])
+                    not_adv_sorted = c_race.get('not_adv_dan_nums', [])
+                    race_details = c_race.get('race_details', race_details)
+                    use_cache = True
+                    print(f"⚡ [全包快取命中] 賽事資料與雙列推介已成功由 JSON 秒開派發！")
+        except: pass
+
+    if not use_cache:
+        print(f"🐢 [快取未命中] 正在發動 SQL 精準過濾兼全包打包大作戰...")
+        hdrs = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        try:
+            init_resp = requests.get(f"https://racing.hkjc.com/zh-hk/local/information/racecard?racedate={t_dt}&Racecourse={venue_code}&RaceNo=1", headers=hdrs, timeout=10)
+            if init_resp.status_code == 200:
+                init_resp.encoding = 'utf-8'
+                temp_races = [int(re.search(r'RaceNo=(\d+)', a['href'], re.I).group(1)) for a in BeautifulSoup(init_resp.text, 'html.parser').find_all('a', href=True) if 'RaceNo=' in a['href'] and re.search(r'RaceNo=(\d+)', a['href'], re.I)]
+                if temp_races: found_race_nos = sorted(list(set([r for r in temp_races if r <= 12])))
+
+            all_today_horse_names = set()
+            parsed_races_html = {}
             
-            # =========================================================
-            # 🛠️ 核心升級：動態從馬會網頁網頁原始碼中，100% 自動抓取今日實際開賽總場數！
-            # =========================================================
-            temp_races = []
-            # 尋找馬會上方第1場、第2場的導覽列超連結特徵
-            for a_tag in soup.find_all('a', href=True):
-                if 'RaceNo=' in a_tag['href'] or 'race_no=' in a_tag['href'].lower():
-                    r_match = re.search(r'RaceNo=(\d+)', a_tag['href'], re.IGNORECASE)
-                    if r_match:
-                        r_num = int(r_match.group(1))
-                        if r_num not in temp_races and r_num <= 12:
-                            temp_races.append(r_num)
-            
-            if temp_races:
-                found_race_nos = sorted(temp_races)
-            else:
-                # 兜底二：從畫面的純文字數字列表中分析
-                txt_races = [int(x) for x in re.findall(r'第(\d+)場', soup.text) if int(x) <= 12]
-                if txt_races: found_race_nos = sorted(list(set(txt_races)))
+            for r_idx in found_race_nos:
+                loop_resp = requests.get(f"https://racing.hkjc.com/zh-hk/local/information/racecard?racedate={t_dt}&Racecourse={venue_code}&RaceNo={r_idx}", headers=hdrs, timeout=10)
+                if loop_resp.status_code != 200: continue
+                loop_resp.encoding = 'utf-8'
+                l_soup = BeautifulSoup(loop_resp.text, 'html.parser')
+                parsed_races_html[r_idx] = l_soup
+                
+                table = l_soup.find('table', id='racecardlist') or l_soup.find('table', class_='table_bd')
+                if table and table.find('tr'):
+                    for row in table.find_all('tr'):
+                        if row.find('th') or any(k in str(row.get('class', '')) for k in ['header', 'hidden']): continue
+                        cols = row.find_all('td')
+                        if len(cols) >= 4:
+                            raw_n = " ".join(cols[3].text.split()).strip() if len(cols) > 3 else ""
+                            nm_m = re.search(r'([\u4e00-\u9fa5]+)', raw_n)
+                            if nm_m: all_today_horse_names.add(nm_m.group(1).strip())
 
-            # =========================================================
-            # 🎯 閣下要求的 Debug 偵錯直印功能（在 VS 下方黑視窗 printf 印出真實場次清單）
-            # =========================================================
-            print("\n" + "⚙️  "*15 + "【後台動態場次 Debug 生態回報】" + " ⚙️ "*15)
-            print(f"🏟️ 當前分析場地：{venue_code} | 日期：{t_dt}")
-            print(f"📊 馬會網頁實際偵測到的今日總開賽場次清單 (found_race_nos) ➔ {found_race_nos}")
-            print(f"🏁 今日最高賽事關卡數 ➔ 第 {max(found_race_nos)} 場")
-            print("="*85 + "\n")
+            db_rec, db_inj = pd.DataFrame(), pd.DataFrame()
+            if all_today_horse_names:
+                conn = sqlite3.connect(DB_FILE)
+                placeholders = ', '.join('?' for _ in all_today_horse_names)
+                name_list = list(all_today_horse_names)
+                db_rec = pd.read_sql_query(f"SELECT * FROM racing_records WHERE 馬名 IN ({placeholders})", conn, params=name_list)
+                db_inj = pd.read_sql_query(f"SELECT * FROM injury_records WHERE 馬名 IN ({placeholders})", conn, params=name_list)
+                conn.close()
 
-            t_m = re.search(r'(草地,.*?\d+米|草地.*?賽道\d+米|\d+米)', " ".join(soup.text.split()))
-            if t_m: race_details['track'] = t_m.group(1).strip()
-            c_m = re.search(r'(第[\u4e00-\u9fa5一二三四五六]班)', pure_txt)
-            if c_m:
-                p_m = re.search(r'(獎金:\$\d+,\d+,\d+|獎金:\$\d+,\d+)', pure_txt)
-                race_details['class_prize'] = f"{p_m.group(1) + ' | ' if p_m else ''}{c_m.group(1)}"
-            if re.search(r'(第\d+場-[\u4e00-\u9fa5]+讓賽)', pure_txt): race_details['title'] = re.search(r'(第\d+場-[\u4e00-\u9fa5]+讓賽)', pure_txt).group(1)
+            new_cache = {'race_date': race_date_str, 'venue': venue_code, 'found_race_nos': found_race_nos, 'races_data': {}}
 
-            conn = sqlite3.connect(DB_FILE)
-            db_rec, db_inj = pd.read_sql_query("SELECT * FROM racing_records", conn), pd.read_sql_query("SELECT * FROM injury_records", conn)
-            conn.close()
+            for r_idx in found_race_nos:
+                if r_idx not in parsed_races_html: continue
+                l_soup = parsed_races_html[r_idx]
+                l_pure = "".join(l_soup.text.split())
 
-            table = soup.find('table', id='racecardlist') or soup.find('table', class_='table_bd')
-            if table and table.find('tr'):
-                rows = table.find_all('tr')
-                idx = {'num': 0, 'hist': 1, 'name': 3, 'wt': 5, 'jky': 6, 'drw': 7, 'trn': 8, 'rtg': 9}
-                th_l = [th.text.strip() for th in (table.find('tr', class_='table_header') or table.find('tr')).find_all(['th', 'td'])]
-                for i, txt in enumerate(th_l):
-                    if '馬匹編號' in txt or '馬號' in txt: idx['num'] = i
-                    elif '近績' in txt: idx['hist'] = i
-                    elif '馬名' in txt: idx['name'] = i
-                    elif '負磅' in txt: idx['wt'] = i
-                    elif '騎師' in txt: idx['jky'] = i
-                    elif '檔位' in txt: idx['drw'] = i
-                    elif '練馬師' in txt: idx['trn'] = i
-                    elif '評分' in txt: idx['rtg'] = i
+                l_details = {'title': f"第 {r_idx} 場 賽事排位", 'datetime': f"{t_dt} 指定賽期", 'track': f"{'沙田' if venue_code=='ST' else '跑馬地'}馬場", 'class_prize': "常規賽事"}
+                t_m = re.search(r'(草地,.*?\d+米|草地.*?賽道\d+米|\d+米)', " ".join(l_soup.text.split()))
+                if t_m: l_details['track'] = t_m.group(1).strip()
+                c_m = re.search(r'(第[\u4e00-\u9fa5一二三四五六]班)', l_pure)
+                if c_m:
+                    p_m = re.search(r'(獎金:\$\d+,\d+,\d+|獎金:\$\d+,\d+)', l_pure)
+                    l_details['class_prize'] = f"{p_m.group(1) + ' | ' if p_m else ''}{c_m.group(1)}"
+                if re.search(r'(第\d+場-[\u4e00-\u9fa5]+讓賽)', l_pure): l_details['title'] = re.search(r'(第\d+場-[\u4e00-\u9fa5]+讓賽)', l_pure).group(1)
 
-                for row in rows:
-                    if row.find('th') or any(k in str(row.get('class', '')) for k in ['header', 'hidden']): continue
-                    cols = row.find_all('td')
-                    if len(cols) >= 10:
-                        try:
-                            num = re.search(r'\d+', cols[idx['num']].text.strip()).group(0)
-                            raw_n = " ".join(cols[idx['name']].text.split()).strip()
-                            
-                            nm_match = re.search(r'([\u4e00-\u9fa5]+)\s*\(([A-Z0-9]+)\)', raw_n)
-                            p_name = nm_match.group(1).strip() if nm_match else raw_n.strip()
-                            horse_display = f"{nm_match.group(1)} [{nm_match.group(2)}]" if nm_match else raw_n
+                l_horses, l_dan, l_not_adv = [], [], []
+                table = l_soup.find('table', id='racecardlist') or l_soup.find('table', class_='table_bd')
+                if table and table.find('tr'):
+                    rows = table.find_all('tr')
+                    idx = {'num': 0, 'hist': 1, 'name': 3, 'wt': 5, 'jky': 6, 'drw': 7, 'trn': 8, 'rtg': 9}
+                    th_l = [th.text.strip() for th in (table.find('tr', class_='table_header') or table.find('tr')).find_all(['th', 'td'])]
+                    for i, txt in enumerate(th_l):
+                        if '馬匹編號' in txt or '馬號' in txt: idx['num'] = i
+                        elif '近績' in txt: idx['hist'] = i
+                        elif '馬名' in txt: idx['name'] = i
+                        elif '負磅' in txt: idx['wt'] = i
+                        elif '騎師' in txt: idx['jky'] = i
+                        elif '檔位' in txt: idx['drw'] = i
+                        elif '練馬師' in txt: idx['trn'] = i
+                        elif '評分' in txt: idx['rtg'] = i
 
-                            j_cln = " ".join(cols[idx['jky']].text.split()).strip().replace('\n', '')
-                            if "綵衣" in raw_n or "負磅" in j_cln: continue
+                    for row in rows:
+                        if row.find('th') or any(k in str(row.get('class', '')) for k in ['header', 'hidden']): continue
+                        cols = row.find_all('td')
+                        if len(cols) >= 10:
+                            try:
+                                num = re.search(r'\d+', cols[idx['num']].text.strip()).group(0)
+                                raw_n = " ".join(cols[idx['name']].text.split()).strip()
+                                nm_m = re.search(r'([\u4e00-\u9fa5]+)\s*\(([A-Z0-9]+)\)', raw_n)
+                                p_name = nm_m.group(1).strip() if nm_m else raw_n.strip()
+                                j_cln = " ".join(cols[idx['jky']].text.split()).strip().replace('\n', '')
+                                if "綵衣" in raw_n or "負磅" in j_cln: continue
 
-                            drw = "".join(filter(str.isdigit, cols[idx['drw']].text.strip()))
-                            if not drw and idx['drw'] + 1 < len(cols): drw = "".join(filter(str.isdigit, cols[idx['drw'] + 1].text.strip()))
-                            t_cln = "".join(re.findall(r'[\u4e00-\u9fa5]+', cols[idx['trn'] + 1 if idx['trn'] + 1 < len(cols) else idx['trn']].text.strip())).replace("檔", "")
-                            
-                            # 🔄 沿用傳統遍歷，拔除 > 40 分限制，只要是純數字格子一律立刻放行載入！
-                            rtg_d = "-"
-                            cell_index = 0
-                            for cell in cols:
-                                if cell_index > idx['trn'] and cell_index <= idx['rtg'] + 2:
-                                    txt_val = cell.text.strip()
-                                    # 排除馬號與檔位干擾，只要是數字，就判定為真實隱藏評分
-                                    if txt_val.isdigit() and int(txt_val) != int(num) and txt_val != drw:
-                                        rtg_d = txt_val
-                                        break
-                                cell_index += 1
+                                drw = "".join(filter(str.isdigit, cols[idx['drw']].text.strip()))
+                                if not drw and idx['drw'] + 1 < len(cols): drw = "".join(filter(str.isdigit, cols[idx['drw'] + 1].text.strip()))
+                                t_cln = "".join(re.findall(r'[\u4e00-\u9fa5]+', cols[idx['trn'] + 1 if idx['trn'] + 1 < len(cols) else idx['trn']].text.strip())).replace("檔", "")
+                                
+                                rtg_d, cell_idx = "-", 0
+                                for cell in cols:
+                                    if cell_idx > idx['trn']:
+                                        if cell.text.strip().isdigit() and int(cell.text.strip()) != int(num) and cell.text.strip() != drw:
+                                            rtg_d = cell.text.strip()
+                                            break
+                                    cell_idx += 1
+                                if rtg_d == "-" and (idx['rtg'] + 1) < len(cols) and re.search(r'\d+', cols[idx['rtg'] + 1].text.strip()): rtg_d = re.search(r'\d+', cols[idx['rtg'] + 1].text.strip()).group(0)
 
-                            if rtg_d == "-" and (idx['rtg'] + 1) < len(cols):
-                                r_match = re.search(r'\d+', cols[idx['rtg'] + 1].text.strip())
-                                if r_match: rtg_d = r_match.group(0)
+                                curr_rate = int(rtg_d) if rtg_d.isdigit() else 0
+                                is_ex, rsn_txt, min_r, max_r, is_not_adv = calc_funnel(p_name, curr_rate, t_cln, db_rec, db_inj)
 
-                            curr_rate = int(rtg_d) if rtg_d.isdigit() else 0
+                                if not is_ex:
+                                    l_dan.append(str(num))
+                                    if is_not_adv: l_not_adv.append(str(num))
 
-                            is_ex, rsn_txt, min_r, max_r, is_not_adv = calc_funnel(p_name, curr_rate, t_cln, db_rec, db_inj)
+                                l_horses.append({
+                                    'num': num, 'history': " ".join(cols[idx['hist']].text.split()).strip(), 'name': f"{nm_m.group(1)} [{nm_m.group(2)}]" if nm_m else raw_n,
+                                    'weight': "".join(filter(str.isdigit, cols[idx['wt']].text.strip())) + " 磅", 'jockey': j_cln, 'draw': drw + " 檔" if drw else "-",
+                                    'trainer': t_cln, 'rating': rtg_d if rtg_d != "-" else "", 'is_excluded': is_ex, 'exclusion_reason': "✨ 通過推介" if not (is_ex or is_not_adv) else rsn_txt, 'gold_range': f"{min_r}-{max_r}分" if max_r > 0 else "🆕新馬/插班馬"
+                                })
+                            except: continue
 
-                            if not is_ex:
-                                dan_nums.append(str(num))
-                                if is_not_adv: not_adv_dan_nums.append(str(num))
+                # 💡 核心打包點：把每一場的「推介、不建議列與賽事資料」一網打盡通通寫入 JSON！
+                new_cache['races_data'][str(r_idx)] = {
+                    'race_horses': l_horses, 
+                    'dan_nums': sorted(list(set(l_dan)), key=int), 
+                    'not_adv_dan_nums': sorted(list(set(l_not_adv)), key=int), 
+                    'race_details': l_details
+                }
+                print(f"✅ 已下載全包打包 ➔ 第 {r_idx} 場")
 
-                            g_label = f"{min_r}-{max_r}分" if max_r > 0 else "🆕新馬/插班馬"
-                            ui_status = "✨ 通過推介" if not (is_ex or is_not_adv) else rsn_txt
+            with open(cache_file, 'w', encoding='utf-8') as f: json.dump(new_cache, f, ensure_ascii=False, indent=4)
+            if str(race_no) in new_cache['races_data']:
+                c_race = new_cache['races_data'][str(race_no)]
+                race_horses, dan_nums_sorted, not_adv_sorted, race_details = c_race['race_horses'], c_race['dan_nums'], c_race['not_adv_dan_nums'], c_race['race_details']
+        except Exception as e: race_details['title'] = f"⚠️ 連線失敗: {str(e)}"
 
-                            race_horses.append({
-                                'num': num, 'history': " ".join(cols[idx['hist']].text.split()).strip(), 'name': horse_display,
-                                'weight': "".join(filter(str.isdigit, cols[idx['wt']].text.strip())) + " 磅", 'jockey': j_cln, 'draw': drw + " 檔" if drw else "-",
-                                'trainer': t_cln, 'rating': rtg_d, 'is_excluded': is_ex, 'exclusion_reason': ui_status, 'gold_range': g_label
-                            })
-                        except: continue
 
-                dan_nums_sorted = sorted(dan_nums, key=int)
-                not_adv_sorted = sorted(not_adv_dan_nums, key=int)
-
-    except Exception as e: race_details['title'] = f"⚠️ 連線失敗: {str(e)}"
 
     return render_template('hkjc_live.html', race_horses=race_horses, current_race=race_no, race_details=race_details,
-                           race_date_str=race_date_str, venue_code=venue_code, 
-                           dan_nums_json=dan_nums_sorted if 'dan_nums_sorted' in locals() else [], 
-                           not_adv_json=not_adv_sorted if 'not_adv_sorted' in locals() else [], races=found_race_nos)
+                           race_date_str=race_date_str, venue_code=venue_code, dan_nums_json=dan_nums_sorted, not_adv_json=not_adv_sorted, races=found_race_nos)
+
 def calc_funnel(name, rate, trn, db_r, db_i):
     """🧠 核心大腦：完全對齊天花板「硬排除」與評分過低「不建議馬膽」之漏斗分流版"""
     ex, rsn, min_r, max_r = False, "", 0, 0
