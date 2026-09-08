@@ -73,11 +73,14 @@
         <div class="card bg-white border-0 p-3 mb-4 shadow-sm text-center">
             <h5 class="fw-bold mb-3 text-primary">📅 請選擇欲載入顯示的馬會賽事場次：</h5>
             <!-- 🏁 聽話場次導覽列：100% 依據後端偵測到的真實場次進行按鈕渲染（包含 8、9、11場全自動縮放） -->
-            <p style="font-weight: bold; margin-bottom: 8px;">📊 請選擇欲載入顯示的馬會賽事場次：</p>
-            <div style="margin-bottom: 20px; font-size: 16px;">
+            <p style="font-weight: bold; margin-bottom: 8px;">
+                {% if is_offline_mode %}🔒 離線快取唯讀模式下{% else %}📊 線上即時同步下{% endif %}，請選擇賽事場次：
+            </p>
+            <div style="margin-bottom: 15px;">
                 {% for r in races %}
-                <a href="{{ url_for('view_race', race_date_str=race_date_str, venue_code=venue_code, race_no=r) }}"
-                   style="margin-right: 12px; text-decoration: none; font-weight: {% if r == current_race %}bold; color: #ffc107;{% else %}normal; color: #007bff;{% endif %}">
+                <!-- 💡 智慧分流鎖扣：如果是離線模式，切換按鈕時會保持在離線路由 /hkjc_offline -->
+                <a href="{% if is_offline_mode %}{{ url_for('view_race_offline', race_no=r) }}{% else %}{{ url_for('view_race', race_date_str=race_date_str, venue_code=venue_code, race_no=r) }}{% endif %}"
+                   class="nav-btn {% if r == current_race %}active{% endif %}">
                     第 {{ r }} 場
                 </a>
                 {% endfor %}

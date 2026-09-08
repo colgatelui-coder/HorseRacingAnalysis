@@ -525,6 +525,39 @@ def view_race(race_date_str, venue_code, race_no):
     return render_template('hkjc_live.html', race_horses=race_horses, current_race=race_no, race_details=race_details,
                            race_date_str=race_date_str, venue_code=venue_code, dan_nums_json=dan_nums_sorted, not_adv_json=not_adv_sorted, races=found_race_nos)
 
+@app.route('/hkjc_offline')
+def view_race_offline():
+    """🔒 離線智慧通道：100% 依據現有 JSON 唯讀秒開版"""
+    import json, os
+    cache_file = "hkjc_cache.json"
+    req_race = request.args.get('race_no', 1, type=int)
+
+    if not os.path.exists(cache_file):
+        return '''<div style="padding:40px;text-align:center;font-family:sans-serif;line-height:1.8;">
+            <h2 style="color:#dc3545;">📭 離線載入失敗：本地暫無快取檔案！</h2>
+            <p style="color:#6c757d;">請先使用主頁的<b>【線上即時同步】</b>功能執行第一次數據打包下載。</p>
+            <br><a href="/" style="color:#007bff;text-decoration:none;font-weight:bold;">↩ 返回預測庫主頁</a>
+        </div>''', 404
+
+    try:
+        with open(cache_file, 'r', encoding='utf-8') as f: cache_data = json.load(f)
+        races_dict = cache_data.get('races_data', {})
+        found_race_nos = cache_data.get('found_race_nos', [1])
+        current_race = req_race if req_race in found_race_nos else found_race_nos[0]
+        race_key = str(current_race)
+
+        if race_key in races_dict:
+            c_race = races_dict[race_key]
+            return render_template(
+                'hkjc_live.html', race_horses=c_race['race_horses'], current_race=current_race,
+                race_details=c_race['race_details'], race_date_str=cache_data.get('race_date', '2026-09-09'),
+                venue_code=cache_data.get('venue', 'HV'), dan_nums_json=c_race.get('dan_nums', []),
+                not_adv_json=c_race.get('not_adv_dan_nums', []), races=found_race_nos, is_offline_mode=True
+            )
+    except Exception as e: return f"<h3>⚠️ 離線大腦解析崩潰: {str(e)}</h3>", 500
+    return "<h3>📭 離線通道：找不到該場次的排位紀錄。</h3>", 404
+
+
 def calc_funnel(name, rate, trn, db_r, db_i):
     """🧠 核心大腦：完全對齊天花板「硬排除」與評分過低「不建議馬膽」之漏斗分流版"""
     ex, rsn, min_r, max_r = False, "", 0, 0

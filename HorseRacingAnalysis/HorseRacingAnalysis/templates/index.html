@@ -66,6 +66,11 @@
                             </div>
                             <button type="submit" class="btn btn-primary fw-bold w-100 py-2 shadow-sm">🚀 開啟指定排位 (新分頁)</button>
                         </form>
+                        <!-- 💡 新增的獨立離線版按鈕 (完全不干擾原有表單，一按直接跳轉) -->
+                        <a href="{{ url_for('view_race_offline', race_no=1) }}"
+                           style="display: inline-block; background-color: #6c757d; color: white; padding: 6px 12px; border: none; border-radius: 4px; font-weight: bold; text-decoration: none; margin-left: 15px;">
+                            🔒 本地離線排位版
+                        </a>
                     </div>
                 </div>
             </div>
