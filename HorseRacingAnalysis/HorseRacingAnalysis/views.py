@@ -559,47 +559,75 @@ def view_race_offline():
 
 
 def calc_funnel(name, rate, trn, db_r, db_i):
-    """🧠 核心大腦：完全對齊天花板「硬排除」與評分過低「不建議馬膽」之漏斗分流版"""
+    """🧠 核心大腦：年齡隔離防干擾版（100% 平反 4 歲年轻馬 1 號、13 號）"""
     ex, rsn, min_r, max_r = False, "", 0, 0
     bt = ["丁冠豪", "大衛希斯", "葉楚航", "鄭俊偉", "徐雨石"]
     ik = ['心律', '流血', '不良於行', '受傷', '手術', '肌腱', '筋腱', '懸韌帶', '韌帶', '骨', '關節', '碎骨', '呼吸道', '喘鳴症', '流鼻血']
     ek = ['表現欠佳', '令人失望', '難以接受', '八歲或以上', '食慾不振', '發燒', '閹割', '煩躁', '被卡住']
-    v2_h, v2_a, v2_n, v2_o, age, l_t3, l_inj, is_new, has_t3 = "🟢健康", "常規", "有賽績", "常規", 5, None, None, True, False
+    v2_h, v2_a, v2_n, v2_o, age, l_t3, l_inj, is_new, has_t3, total_races_cnt = "🟢健康", "常規", "有賽績", "常規", 5, None, None, True, False, 0
 
     try: curr_rate_int = int(rate)
     except: curr_rate_int = 0
-
     search_name = str(name).strip()
 
     if not db_r.empty:
         h = db_r[db_r['馬名'] == search_name].copy()
         if not h.empty:
-            is_new = False
-            h['名_num'] = h['名次'].apply(lambda x: int(str(x).strip()) if str(x).strip().isdigit() else 99)
-            h['dt'] = pd.to_datetime(h['日期'], errors='coerce', dayfirst=True).fillna(pd.to_datetime(h['日期'], format='%d/%m/%Y', errors='coerce', dayfirst=True))
-            try: h = h.sort_values(by=['dt', '季度場次'], ascending=[False, False])
-            except: h = h.sort_values(by='dt', ascending=False)
-            try: age = int(float(str(h.iloc[0].get('當前年齡', 5))))
+            is_new, total_races_cnt = False, len(h)
+            
+            # 🎯 終極修復連鎖點：優先獨立安全解碼年齡，絕不與日期格式綁定，100% 保障 4 歲年輕狀態！
+            try:
+                if '當前年齡' in h.columns and pd.notna(h.iloc[0]['當前年齡']):
+                    age = int(float(str(h.iloc[0]['當前年齡'])))
+                elif '年齡' in h.columns and pd.notna(h.iloc[0]['年齡']):
+                    age = int(float(str(h.iloc[0]['年齡'])))
+                else: age = 5
             except: age = 5
+
+            h['名_num'] = h['名次'].apply(lambda x: int(str(x).strip()) if str(x).strip().isdigit() else 99)
+            
+            # 安全日期格式清洗
+            try:
+                h['dt'] = pd.to_datetime(h['日期'], errors='coerce', dayfirst=True)
+                h = h.sort_values(by='dt', ascending=False)
+            except: pass
+            
             t3 = h[h['名_num'] <= 3]
             if not t3.empty:
                 min_r = int(pd.to_numeric(t3['評分'], errors='coerce').min())
                 max_r = int(pd.to_numeric(t3['評分'], errors='coerce').max())
-                l_t3 = t3['dt'].max()
-            c25, c26 = (h['dt'].dt.year == 2025) & (h['dt'].dt.month >= 9), (h['dt'].dt.year == 2026) & (h['dt'].dt.month <= 7)
-            if not h[c25 | c26].empty and not h[c25 | c26][h['名_num'] <= 3].empty: has_t3 = True
+                l_t3 = h[h['名_num'] <= 3]['dt'].max() if 'dt' in h.columns else None
+            
+            # 賽績年度推算
+            if 'dt' in h.columns and not h['dt'].isna().all():
+                c25, c26 = (h['dt'].dt.year == 2025) & (h['dt'].dt.month >= 9), (h['dt'].dt.year == 2026) & (h['dt'].dt.month <= 7)
+                if not h[c25 | c26].empty and not h[c25 | c26][h['名_num'] <= 3].empty: has_t3 = True
 
     if is_new and not db_i.empty and not db_i[db_i['馬名'] == search_name].empty: is_new = False
     if not db_i.empty:
         j = db_i[db_i['馬名'] == search_name].copy()
         if not j.empty:
-            j['dt'] = pd.to_datetime(j['傷患日期'], errors='coerce', dayfirst=True)
-            for _, r in j.iterrows():
-                if any(k in str(r['詳情']) for k in ik) and not any(e in str(r['詳情']) for e in ek):
-                    if pd.notna(r['dt']) and (l_inj is None or r['dt'] > l_inj): l_inj = r['dt']
+            try:
+                j['dt'] = pd.to_datetime(j['傷患日期'], errors='coerce', dayfirst=True)
+                for _, r in j.iterrows():
+                    if any(k in str(r['詳情']) for k in ik) and not any(e in str(r['詳情']) for e in ek):
+                        if pd.notna(r['dt']) and (l_inj is None or r['dt'] > l_inj): l_inj = r['dt']
+            except: pass
 
-    if l_inj is not None: v2_h = "🟢健康" if (l_t3 is not None and l_t3 > l_inj) else "🚨嚴重傷患"
-    if not is_new and not has_t3: v2_a = "🚫 退化期老馬" if age >= 6 else "🚫 沒有能力馬"
+    if l_inj is not None and 'dt' in h.columns: v2_h = "🟢健康" if (l_t3 is not None and l_t3 > l_inj) else "🚨嚴重傷患"
+    
+    # 🛡️ 💡 【防線二終極複合修正門鎖】
+    if not is_new and not has_t3:
+        # 1. 只有當出賽大於或等於 3 場
+        # 2. 且年齡在 5 歲或以上時，才允許執行「沒有能力馬」的硬排除！
+        if total_races_cnt >= 3 and age >= 5:
+            v2_ability = "🚫 退化期老馬" if age >= 6 else "🚫 沒有能力馬"
+        else:
+            # 4 歲或以下年輕幼駒（如 1 號、13 號），100% 平反原諒放行！
+            v2_ability = "常規"
+    else:
+        v2_ability = "常規"
+
     if is_new: v2_n = "🚫 未操完馬房" if trn in bt else "🆕新馬"
     if not is_new and has_t3:
         if age <= 5: v2_o = "🌱成長期"
@@ -607,19 +635,21 @@ def calc_funnel(name, rate, trn, db_r, db_i):
             if curr_rate_int > 0 and max_r > 0: v2_o = "📈平穩向上" if abs(curr_rate_int - max_r) <= 5 else "📉飽和調整期"
 
     if "🚨" in v2_h: return True, "❌ 排除(防線一)：生理傷患。", min_r, max_r, False
-    if "🚫" in v2_a: return True, f"❌ 排除(防線二)：{v2_a}。", min_r, max_r, False
+    if "🚫" in v2_ability: return True, f"❌ 排除(防線二)：{v2_ability}。", min_r, max_r, False
     if "🚫" in v2_n: return True, f"❌ 排除(防線三)：馬房未操完。", min_r, max_r, False
 
     is_not_adv = False
     if curr_rate_int > max_r and max_r > 0:
         if v2_o in ["📉飽和調整期", "常規"] or (curr_rate_int > max_r + 2 and v2_o not in ["🌱成長期", "📈平穩向上"]):
-            return True, f"❌ 排除(防線四)：當前評分({curr_rate_int}分)超出最高勝出天花板({max_r}分)阻力過大。", min_r, max_r, False
+            return True, f"❌ 排除(防線四)：當前評分({curr_rate_int}分)超出最高天花板({max_r}分)阻力過大。", min_r, max_r, False
 
     if min_r > 0 and curr_rate_int < min_r and v2_o not in ["🌱成長期"]:
         is_not_adv = True
         rsn = f"⚠️ 不建議馬膽：低於黃金下限({min_r}分)。"
 
     return ex, rsn if is_not_adv else "", min_r, max_r, is_not_adv
+
+
 
 
 
