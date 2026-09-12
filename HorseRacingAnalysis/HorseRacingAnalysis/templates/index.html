@@ -4,17 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🗄️ 賽馬雙表 SQL 智能交叉大數據庫</title>
-    <!-- Bootstrap 5 網路美化框架 -->
-    <link href="https://jsdelivr.net" rel="stylesheet">
+    <!-- ⚡ FIX 1: Valid Bootstrap 5 CDN Links -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         .table-responsive {
             max-height: 600px;
             overflow-y: auto;
         }
-        /* 💡 預設將所有資料列隱藏，達成初次載入不顯示任何資料的效果 */
-        #horse_table tbody tr {
-            display: none;
+
+        /* ⚡ FIX 2: Force fixed table layout for instant browser painting */
+        #horse_table {
+            table-layout: fixed;
+            width: 100%;
         }
+
+            #horse_table th, #horse_table td {
+                word-wrap: break-word;
+                overflow-wrap: break-word;
+            }
+
+            /* 💡 預設將所有資料列隱藏，達成初次載入不顯示任何資料的效果 */
+            #horse_table tbody tr {
+                display: none;
+            }
     </style>
 </head>
 <body class="bg-light">
@@ -35,7 +47,7 @@
             <!-- 智慧指標卡：展示目前數據庫已儲存的總馬匹數量 -->
             <div class="bg-primary text-white p-3 rounded-3 text-center shadow border border-light border-2" style="min-width: 180px;">
                 <div class="small fw-bold text-uppercase opacity-75">📊 已保存馬匹總數</div>
-                <div class="display-6 fw-bold my-1" id="total_horses_badge">{{ data|length }}</div>
+                <div class="display-6 fw-bold my-1" id="total_horses_badge">{{ data|length if data else 0 }}</div>
                 <div class="small opacity-50">匹珍貴戰駒數據</div>
             </div>
         </div>
@@ -64,11 +76,9 @@
                                     </div>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-primary fw-bold w-100 py-2 shadow-sm">🚀 開啟指定排位 (新分頁)</button>
+                            <button type="submit" class="btn btn-primary fw-bold w-100 py-2 shadow-sm mb-2">🚀 開啟指定排位 (新分頁)</button>
                         </form>
-                        <!-- 💡 新增的獨立離線版按鈕 (完全不干擾原有表單，一按直接跳轉) -->
-                        <a href="{{ url_for('view_race_offline', race_no=1) }}"
-                           style="display: inline-block; background-color: #6c757d; color: white; padding: 6px 12px; border: none; border-radius: 4px; font-weight: bold; text-decoration: none; margin-left: 15px;">
+                        <a href="{{ url_for('view_race_offline', race_no=1) }}" class="btn btn-secondary fw-bold w-100">
                             🔒 本地離線排位版
                         </a>
                     </div>
@@ -97,7 +107,7 @@
                 <div class="card h-100 shadow-sm border-info">
                     <div class="card-header bg-info text-dark fw-bold">🔍 智能數據快檢過濾（輸入方可顯示）</div>
                     <div class="card-body d-flex flex-column justify-content-center">
-                        <input type="text" id="search_input" onkeyup="searchHorse()" class="form-control form-control-lg border-2 border-info shadow-sm" placeholder="輸入馬名、途程或狀態篩選顯示...">
+                        <input type="text" id="search_input" oninput="debouncedSearch()" class="form-control form-control-lg border-2 border-info shadow-sm" placeholder="輸入馬名、途程或狀態篩選顯示...">
                         <div class="form-text mt-2 text-muted" id="search_status_tip">💡 提示：目前處於高防禦極速模式，請在上方輸入關鍵字查詢馬匹。</div>
                     </div>
                 </div>
@@ -115,15 +125,15 @@
                     <table class="table table-hover table-striped mb-0 align-middle text-center" id="horse_table">
                         <thead class="table-dark">
                             <tr>
-                                <th class="text-start ps-4">馬名 (年齡)</th>
-                                <th>歷史賽績</th>
-                                <th>健康監控狀態</th>
-                                <th>評分潛力指標</th>
-                                <th>黃金上名評分</th>
-                                <th>最強途程</th>
-                                <th>現時最新評分</th>
-                                <th>系統預警狀態</th>
-                                <th class="text-start">智能綜合分析診斷簡報 (結合獸醫報告)</th>
+                                <th style="width: 14%;" class="text-start ps-4">馬名 (年齡)</th>
+                                <th style="width: 10%;">歷史賽績</th>
+                                <th style="width: 10%;">健康監控狀態</th>
+                                <th style="width: 10%;">評分潛力指標</th>
+                                <th style="width: 10%;">黃金上名評分</th>
+                                <th style="width: 8%;">最強途程</th>
+                                <th style="width: 9%;">現時最新評分</th>
+                                <th style="width: 9%;">系統預警狀態</th>
+                                <th style="width: 20%;" class="text-start">智能綜合分析診斷簡報</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -147,11 +157,11 @@
                                 <td class="fw-bold text-success">{{ horse.dist }}</td>
                                 <td class="text-danger fw-bold fs-5">{{ horse.current }} 分</td>
                                 <td><span class="badge bg-{{ horse.color }} p-2 shadow-sm">{{ horse.status }}</span></td>
-                                <td class="text-start text-muted small" style="max-width: 250px;">{{ horse.potential_desc }}</td>
+                                <td class="text-start text-muted small">{{ horse.potential_desc }}</td>
                             </tr>
                             {% endfor %}
                             {% else %}
-                            <tr>
+                            <tr id="no_data_row" style="display: table-row;">
                                 <td colspan="9" class="text-muted p-5 fs-5">📭 目前 SQL 資料庫內尚無賽績數據。請先至上方匯入資料。</td>
                             </tr>
                             {% endif %}
@@ -160,6 +170,7 @@
                 </div>
             </div>
         </div>
+
         <!-- 🚨 安全重設區塊：一鍵清空資料庫 -->
         <div class="mt-5 mb-4 p-4 bg-white rounded-3 shadow-sm border border-danger">
             <div class="d-flex justify-content-between align-items-center">
@@ -168,7 +179,6 @@
                     <p class="text-muted small mb-0">注意：此操作將會永久刪除 SQLite 資料庫（racing.db）內所有的賽績與傷患報告，資料刪除後將無法復原。</p>
                 </div>
                 <div>
-                    <!-- 觸發安全確認的表單 -->
                     <form action="/reset_database" method="POST" onsubmit="return confirmReset();">
                         <button type="submit" class="btn btn-danger btn-lg fw-bold px-4 shadow">
                             💥 一鍵清空 SQL 資料庫 (Reset)
@@ -177,62 +187,68 @@
                 </div>
             </div>
         </div>
-    </div> <!-- 這是原本 index.html 最底部的 container 結束標籤，請保留在按鈕下方 -->
+    </div>
 
-    <!-- Bootstrap 5 JS -->
-    <script src="https://jsdelivr.net"></script>
+    <!-- ⚡ FIX 1: Valid Bootstrap 5 JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-    <!-- 💡 修正 JavaScript 的過濾邏輯 -->
     <script>
         function confirmReset() {
-            // 第一層確認
             var firstCheck = confirm("⚠️ 警告：您即將清空整個 SQL 資料庫！\n\n這會將所有的馬匹賽績與獸醫傷患病歷永久刪除。您確定要繼續嗎？");
             if (firstCheck) {
-                // 第二層確認，防止滑鼠手滑誤點
-                var secondCheck = confirm("🔥 最後確認：刪除後資料將永遠無法復原！\n\n請再次確認是否真的要徹底清空資料庫？");
-                return secondCheck; // 只有兩次都點選「確定」，才會真正送出刪除請求
+                return confirm("🔥 最後確認：刪除後資料將永遠無法復原！\n\n請再次確認是否真的要徹底清空資料庫？");
             }
-            return false; // 點選取消則直接攔截，保護資料安全
+            return false;
         }
+
+        // ⚡ FIX 3: Add Debounce to prevent browser freezing during rapid typing
+        let searchTimer = null;
+        function debouncedSearch() {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(searchHorse, 150);
+        }
+
         function searchHorse() {
             var input = document.getElementById("search_input");
-            // 💡 修正關鍵：將原先錯誤的 .strip() 改為原生 JavaScript 的 .trim() 移除前後空白
             var filter = input.value.toUpperCase().trim();
             var table = document.getElementById("horse_table");
-            var tr = table.getElementsByTagName("tr");
+            var tr = table.querySelectorAll("tbody tr");
             var tip = document.getElementById("search_status_tip");
             var badge = document.getElementById("match_count_badge");
 
+            if (!tr.length) return;
+
             var matchCount = 0;
 
-            // 如果搜尋框被清空，強制將所有行隱藏，回到乾淨狀態
             if (filter === "") {
-                for (var i = 1; i < tr.length; i++) {
+                for (var i = 0; i < tr.length; i++) {
                     tr[i].style.display = "none";
                 }
                 tip.innerHTML = "💡 提示：目前處於高防禦極速模式，請在上方輸入關鍵字查詢馬匹。";
                 tip.className = "form-text mt-2 text-muted";
                 badge.innerHTML = "待檢索...";
-                badge.className = "badge bg-light text-dark"; return;
+                badge.className = "badge bg-light text-dark";
+                return;
             }
 
-            // 遍歷所有行進行過濾
-            for (var i = 1; i < tr.length; i++) {
+            for (var i = 0; i < tr.length; i++) {
+                if (tr[i].id === "no_data_row") continue;
                 var textContent = tr[i].textContent || tr[i].innerText;
                 if (textContent.toUpperCase().indexOf(filter) > -1) {
-                    // 匹配成功，顯示該列
                     tr[i].style.display = "table-row";
                     matchCount++;
-                } else { tr[i].style.display = "none"; }
+                } else {
+                    tr[i].style.display = "none";
+                }
             }
-            // 即時動態更新快檢指示燈狀態
+
             if (matchCount > 0) {
                 tip.innerHTML = "🎯 檢索成功！已為您過濾顯示出 " + matchCount + " 匹符合條件的數據馬。";
                 tip.className = "form-text mt-2 text-success fw-bold";
                 badge.innerHTML = "已過濾出 " + matchCount + " 筆符合資料";
                 badge.className = "badge bg-success text-white";
             } else {
-                tip.innerHTML = "❓ 抱歉：數據庫內查無包含『" + input.value + "』的馬匹，請重新輸入。";
+                tip.innerHTML = "❓ 抱歉：數據庫內查無包含『" + input.value.trim() + "』的馬匹，請重新輸入。";
                 tip.className = "form-text mt-2 text-danger fw-bold";
                 badge.innerHTML = "未找到任何資料";
                 badge.className = "badge bg-danger text-white";
