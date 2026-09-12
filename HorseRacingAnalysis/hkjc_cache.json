@@ -297,8 +297,8 @@
                     "draw": "10 檔",
                     "trainer": "鄭俊偉",
                     "rating": "51",
-                    "is_excluded": false,
-                    "exclusion_reason": "✨ 通過推介",
+                    "is_excluded": true,
+                    "exclusion_reason": "❌ 排除(防線一)：生理傷患。",
                     "gold_range": "🆕新馬/插班馬"
                 },
                 {
@@ -398,7 +398,6 @@
                 "3",
                 "4",
                 "5",
-                "6",
                 "7",
                 "8",
                 "9",
@@ -1530,8 +1529,8 @@
                     "draw": "3 檔",
                     "trainer": "黎昭昇",
                     "rating": "69",
-                    "is_excluded": false,
-                    "exclusion_reason": "✨ 通過推介",
+                    "is_excluded": true,
+                    "exclusion_reason": "❌ 排除(防線一)：生理傷患。",
                     "gold_range": "57-75分"
                 },
                 {
@@ -1569,8 +1568,8 @@
                     "draw": "10 檔",
                     "trainer": "方嘉柏",
                     "rating": "66",
-                    "is_excluded": false,
-                    "exclusion_reason": "✨ 通過推介",
+                    "is_excluded": true,
+                    "exclusion_reason": "❌ 排除(防線一)：生理傷患。",
                     "gold_range": "64-64分"
                 },
                 {
@@ -1632,10 +1631,8 @@
                 "3",
                 "4",
                 "6",
-                "7",
                 "8",
                 "9",
-                "10",
                 "11",
                 "12",
                 "13"
@@ -1815,8 +1812,8 @@
                     "draw": "3 檔",
                     "trainer": "沈集成",
                     "rating": "63",
-                    "is_excluded": false,
-                    "exclusion_reason": "✨ 通過推介",
+                    "is_excluded": true,
+                    "exclusion_reason": "❌ 排除(防線一)：生理傷患。",
                     "gold_range": "57-74分"
                 },
                 {
@@ -1844,7 +1841,6 @@
                 "10",
                 "11",
                 "12",
-                "13",
                 "14"
             ],
             "not_adv_dan_nums": [],

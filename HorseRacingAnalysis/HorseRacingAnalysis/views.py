@@ -69,21 +69,18 @@ def save_races_to_sql(csv_text):
         return f"錯誤：解析賽績檔案時發生崩潰，原因為: {str(e)}"
 
 def save_injuries_to_sql(csv_text):
-    """處理傷患紀錄 CSV 上傳 (大容錯版)"""
+    """🩸 傷患匯入大腦：新增 ffill() 智慧向下填補，徹底擒獲留空欄位馬匹"""
     try:
-        if not csv_text.strip():
-            return "上傳失敗：傷患檔案內容為空！"
-            
+        if not csv_text.strip(): return "上傳失敗：傷患檔案內容為空！"
         df = pd.read_csv(io.StringIO(csv_text.strip()), sep=None, engine='python')
         df.columns = df.columns.str.strip()
         
         if '日期' in df.columns and '傷患日期' not in df.columns:
             df = df.rename(columns={'日期': '傷患日期'})
-            
-        required = ['馬名', '詳情']
-        missing = [col for col in required if col not in df.columns]
-        if missing:
-            return f"上傳失敗：傷患檔案缺少必要欄位 {missing}。目前有的欄位為：{list(df.columns)}"
+
+        # 🎯 終極修復地雷點：前向智慧向下填充！把空著的馬名與烙印編號自動複製填滿！
+        if '馬名' in df.columns: df['馬名'] = df['馬名'].ffill()
+        if '烙印編號' in df.columns: df['烙印編號'] = df['烙印編號'].ffill()
 
         df = df.dropna(subset=['詳情'])
         df['馬名'] = df['馬名'].fillna("未知馬匹").astype(str).str.strip()
@@ -93,8 +90,7 @@ def save_injuries_to_sql(csv_text):
         conn.commit()
         conn.close()
         return "SUCCESS: 🩸 傷患紀錄報告已成功保存至 SQL 資料庫！"
-    except Exception as e:
-        return f"錯誤：解析傷患檔案時發生崩潰，原因為: {str(e)}"
+    except Exception as e: return f"錯誤: {str(e)}"
 
 def load_and_analyze_from_sql():
     """AI 分析主引擎：以可加載基石代碼重塑之全新四階漏斗防線對齊版"""
@@ -433,6 +429,18 @@ def view_race(race_date_str, venue_code, race_no):
                 db_rec = pd.read_sql_query(f"SELECT * FROM racing_records WHERE 馬名 IN ({placeholders})", conn, params=name_list)
                 db_inj = pd.read_sql_query(f"SELECT * FROM injury_records WHERE 馬名 IN ({placeholders})", conn, params=name_list)
                 conn.close()
+                # =========================================================
+                # 🎯 閣下要求的 Debug 偵錯列印功能：從傷患資料庫抓取超力量的真實日子
+                # =========================================================
+                if not db_inj.empty:
+                    cln_inj = db_inj[db_inj['馬名'].astype(str).str.strip() == "超力量"]
+                    print("\n" + "🩺 "*12 + "【 🛡️ 超力量 ． 資料庫現存傷患紀錄明細 】" + " 🩺"*12)
+                    if not cln_inj.empty:
+                        for _, r_inj in cln_inj.iterrows():
+                            print(f"  🩹 [傷患報告] ➔ 傷患日期: {r_inj.get('傷患日期')} | 詳情: {r_inj.get('詳情')} | 通過/復原日期: {r_inj.get('通过日期', '暫無')}")
+                    else:
+                        print("  🚨 警告：SQL 傷患資料庫（injury_records）中完全搜尋不到名為【超力量】的字元！請檢查 CSV 是否成功匯入。")
+                    print("="*90 + "\n")
 
             new_cache = {'race_date': race_date_str, 'venue': venue_code, 'found_race_nos': found_race_nos, 'races_data': {}}
 
@@ -571,7 +579,8 @@ def calc_funnel(name, rate, trn, db_r, db_i):
     search_name = str(name).strip()
 
     if not db_r.empty:
-        h = db_r[db_r['馬名'] == search_name].copy()
+        # 🚀 修正點：利用 .str.strip() 刺穿大型賽績資料庫的所有隱藏空格
+        h = db_r[db_r['馬名'].astype(str).str.strip() == search_name].copy()
         if not h.empty:
             is_new, total_races_cnt = False, len(h)
             
@@ -588,8 +597,10 @@ def calc_funnel(name, rate, trn, db_r, db_i):
             
             # 安全日期格式清洗
             try:
-                h['dt'] = pd.to_datetime(h['日期'], errors='coerce', dayfirst=True)
+                h['dt'] = pd.to_datetime(h['日期'], format='%d/%m/%Y', errors='coerce', dayfirst=True)
+                h['dt'] = h['dt'].fillna(pd.to_datetime(h['日期'], format='%d/%m/%y', errors='coerce', dayfirst=True))
                 h = h.sort_values(by='dt', ascending=False)
+                l_t3 = h[h['名_num'] <= 3]['dt'].max()
             except: pass
             
             t3 = h[h['名_num'] <= 3]
