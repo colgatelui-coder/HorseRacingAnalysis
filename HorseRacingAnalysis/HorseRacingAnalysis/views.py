@@ -433,8 +433,8 @@ def view_race(race_date_str, venue_code, race_no):
                 # 🎯 閣下要求的 Debug 偵錯列印功能：從傷患資料庫抓取超力量的真實日子
                 # =========================================================
                 if not db_inj.empty:
-                    cln_inj = db_inj[db_inj['馬名'].astype(str).str.strip() == "超力量"]
-                    print("\n" + "🩺 "*12 + "【 🛡️ 超力量 ． 資料庫現存傷患紀錄明細 】" + " 🩺"*12)
+                    cln_inj = db_inj[db_inj['馬名'].astype(str).str.strip() == "從化之星"]
+                    print("\n" + "🩺 "*12 + "【 🛡️ 從化之星 ． 資料庫現存傷患紀錄明細 】" + " 🩺"*12)
                     if not cln_inj.empty:
                         for _, r_inj in cln_inj.iterrows():
                             print(f"  🩹 [傷患報告] ➔ 傷患日期: {r_inj.get('傷患日期')} | 詳情: {r_inj.get('詳情')} | 通過/復原日期: {r_inj.get('通过日期', '暫無')}")
