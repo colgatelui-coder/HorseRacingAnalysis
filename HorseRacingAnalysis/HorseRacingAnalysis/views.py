@@ -298,6 +298,34 @@ def load_and_analyze_from_sql():
         if conn: conn.close()
         return [], f"分析失敗: {str(e)}"
 
+def get_next_race_info():
+    """🧠 智慧賽期導航：加入 venue.strip() 徹底洗淨換行符號，完美亮起預設馬場"""
+    import datetime, os
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    fixture_file = os.path.join(base_dir, "races_fixture.txt")
+    default_date, default_venue = "2026-09-20", "ST"
+    
+    if not os.path.exists(fixture_file):
+        outer_file = os.path.join(os.path.dirname(base_dir), "races_fixture.txt")
+        if os.path.exists(outer_file): fixture_file = outer_file
+        else: return default_date, default_venue
+    
+    try:
+        today = datetime.date.today()
+        with open(fixture_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                if not line.strip(): continue
+                r_date_str, venue = line.strip().split(',')
+                # 🚀 🎯 終極修復對齊點：強效去除結尾的隱藏 \n 換行雜質，讓 HTML 100% 能完美識別比對！
+                venue_clean = str(venue).strip()
+                r_date = datetime.datetime.strptime(r_date_str, "%Y-%m-%d").date()
+                
+                # 鐵腕門鎖：只要日子大於或等於今天，立即精準扣鎖！
+                if r_date >= today:
+                    return r_date_str, venue_clean
+    except Exception as e:
+        print(f"⚠️ 賽期導航解析失敗: {str(e)}")
+    return default_date, default_venue
 
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/home', methods=['GET', 'POST'])
@@ -318,9 +346,15 @@ def home():
                 res = save_injuries_to_sql(stream.read())
                 if res.startswith("SUCCESS"): success_msg = res.replace("SUCCESS: ", "")
                 else: error_msg = res
+                
     data_results, err = load_and_analyze_from_sql()
     if err: error_msg = err
-    return render_template('index.html', data=data_results, error_msg=error_msg, success_msg=success_msg)
+    
+    # 🚀 🎯 智慧對齊：自動為前端首頁輸入框送出「下一個即將開賽」的預設日子與場地！
+    next_date, next_venue = get_next_race_info()
+    
+    return render_template('index.html', data=data_results, error_msg=error_msg, 
+                           success_msg=success_msg, next_date=next_date, next_venue=next_venue)
 @app.route('/reset_database', methods=['POST'])
 def reset_database():
     """🚨 安全清空機制：一鍵清空 SQL 資料庫後自動重定向回首頁，防止 404"""
@@ -349,20 +383,25 @@ def reset_database():
 
 @app.route('/hkjc_live', methods=['GET', 'POST'])
 def hkjc_live():
-    """1. 接收來自主頁人手輸入的參數，並轉發至排位分頁"""
+    """1. 按下按鈕時，全自動鐵腕刪除舊的 JSON 快取，逼迫刷新"""
+    import os
+    cache_file = "hkjc_cache.json"
+    
+    # 🚀 🎯 終極指令對齊：只要用戶點擊進入排位，不論三七二十一，直接鐵腕刪除原有舊快取！
+    if os.path.exists(cache_file):
+        try:
+            os.remove(cache_file)
+            print("🗑️ [自動化刷新發動] 偵測到進入全新賽期指令，已全自動清理舊有 JSON 快取檔案！")
+        except Exception as e: print(f"⚠️ 刪除舊快取失敗: {str(e)}")
+
     if request.method == 'POST':
-        # 接收主頁輸入的日期與場地
-        input_date = request.form.get('race_date')   # 格式如: "2026-09-06"
-        input_venue = request.form.get('race_venue') # "ST" 或 "HV"
-        
+        input_date = request.form.get('race_date')
+        input_venue = request.form.get('race_venue')
         if input_date:
-            # 將標準日期的橫線 "-" 換成馬會官網網址接受的斜線 "/"
-            formatted_date = input_date.replace('-', '/')
-            # 預設導向該人手指定賽期的第 1 場
-            return redirect(url_for('view_race', race_date_str=formatted_date.replace('/', '-'), venue_code=input_venue, race_no=1))
+            return redirect(url_for('view_race', race_date_str=input_date.replace('/', '-'), venue_code=input_venue, race_no=1))
             
-    # 如果是直接點擊連結，給予預設值開鑼日
-    return redirect(url_for('view_race', race_date_str="2026-09-06", venue_code="ST", race_no=1))
+    next_date, next_venue = get_next_race_info()
+    return redirect(url_for('view_race', race_date_str=next_date, venue_code=next_venue, race_no=1))
     
 @app.route('/hkjc_live/<race_date_str>/<venue_code>/<int:race_no>')
 def view_race(race_date_str, venue_code, race_no):
@@ -398,6 +437,16 @@ def view_race(race_date_str, venue_code, race_no):
             init_resp = requests.get(f"https://racing.hkjc.com/zh-hk/local/information/racecard?racedate={t_dt}&Racecourse={venue_code}&RaceNo=1", headers=hdrs, timeout=10)
             if init_resp.status_code == 200:
                 init_resp.encoding = 'utf-8'
+                # 🛑 🛡️ 【最核心的未出版安全防禦攔截網】
+                # 如果馬會官網返回的內容中，完全查不到任何常規排位表的特徵關鍵字，代表該賽期官方「根本尚未出版」！
+                if "排位表" not in init_resp.text and "racecardlist" not in init_resp.text and "馬名" not in init_resp.text:
+                    return f'''<div style="padding:40px;text-align:center;font-family:sans-serif;line-height:1.8;">
+                        <h2 style="color:#ffc107;">📭 提示：香港賽馬會尚未出版該賽事排位！</h2>
+                        <p style="color:#6c757d;font-size:16px;">您所選取的下一個賽馬日 <b>{race_date_str} ({venue_code})</b> 官方尚未公佈排位表數據。</p>
+                        <p style="color:#dc3545;">(通常馬會將會在開賽前 2 至 3 天的下午正式出版排位。)</p>
+                        <br><a href="/" style="background-color:#007bff;color:white;padding:8px 16px;text-decoration:none;border-radius:4px;font-weight:bold;">↩ 返回主頁</a>
+                    </div>''', 200
+
                 temp_races = [int(re.search(r'RaceNo=(\d+)', a['href'], re.I).group(1)) for a in BeautifulSoup(init_resp.text, 'html.parser').find_all('a', href=True) if 'RaceNo=' in a['href'] and re.search(r'RaceNo=(\d+)', a['href'], re.I)]
                 if temp_races: found_race_nos = sorted(list(set([r for r in temp_races if r <= 12])))
 

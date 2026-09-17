@@ -61,21 +61,28 @@
                         <form action="/hkjc_live" method="POST" target="_blank" class="d-flex flex-column h-100 justify-content-between">
                             <div class="mb-2">
                                 <label class="form-label small fw-bold text-dark">📅 請選擇賽事日期：</label>
-                                <input type="date" name="race_date" value="2026-09-06" class="form-control" required>
+                                <input type="date" name="race_date" value="{{ next_date }}" required>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label small fw-bold text-dark">🏟️ 請選擇賽事馬場：</label>
                                 <div class="d-flex gap-3">
                                     <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="race_venue" id="st_radio" value="ST" checked>
+                                        <!-- 判斷 next_venue 是否為 ST，是的話就加入 checked -->
+                                        <!-- 判斷 if next_venue 是否為 ST。原先的 = 改為 == -->
+                                        <input class="form-check-input" type="radio" name="race_venue" id="st_radio" value="ST"
+                                               {% if next_venue =='ST' %}checked{% endif %}>
                                         <label class="form-check-label text-dark fw-bold" for="st_radio">沙田 (ST)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="race_venue" id="hv_radio" value="HV">
+                                        <!-- 判斷 next_venue 是否為 HV，是的話就加入 checked -->
+                                        <!-- 判斷 if next_venue 是否為 HV。原先的 = 改為 == -->
+                                        <input class="form-check-input" type="radio" name="race_venue" id="hv_radio" value="HV"
+                                               {% if next_venue =='HV' %}checked{% endif %}>
                                         <label class="form-check-label text-dark fw-bold" for="hv_radio">跑馬地 (HV)</label>
                                     </div>
                                 </div>
                             </div>
+
                             <button type="submit" class="btn btn-primary fw-bold w-100 py-2 shadow-sm mb-2">🚀 開啟指定排位 (新分頁)</button>
                         </form>
                         <a href="{{ url_for('view_race_offline', race_no=1) }}" class="btn btn-secondary fw-bold w-100">

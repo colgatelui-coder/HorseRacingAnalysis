@@ -42,6 +42,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include=".vercelignore" />
+    <Content Include="HorseRacingAnalysis\races_fixture.txt" />
     <Content Include="HorseRacingAnalysis\templates\hkjc_live.html" />
     <Content Include="requirements.txt" />
     <Content Include="HorseRacingAnalysis\static\content\bootstrap.css" />
